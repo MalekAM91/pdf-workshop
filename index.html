@@ -1,0 +1,815 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="description" content="Private PDF tool in your browser: PDF to Word, text and images, merge, reorder, write on pages, watermark. Files never leave your device.">
+<title>ورشة PDF الخاصة</title>
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Kufi+Arabic:wght@600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one workbench — files strip on top, page canvas in the middle, export rail on the side (stacks on phone) */
+:root{
+  --bg:#eef1f0; --surface:#ffffff; --sunken:#e3e8e6; --ink:#16211e; --muted:#5a6a65; --line:#cfd8d5;
+  --accent:#0d6b58; --accent-ink:#ffffff; --accent-soft:#d6ebe5; --warn:#a66300; --danger:#b3261e; --page:#ffffff;
+  --shadow:0 1px 2px rgba(16,33,29,.08),0 4px 14px rgba(16,33,29,.06);
+  --f-display:"Noto Kufi Arabic","IBM Plex Sans Arabic",Tahoma,sans-serif;
+  --f-body:"IBM Plex Sans Arabic",Tahoma,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1513; --surface:#18201d; --sunken:#111816; --ink:#e6eeeb; --muted:#97a8a2; --line:#2b3733;
+  --accent:#43b89c; --accent-ink:#06231c; --accent-soft:#1b3a32; --warn:#e3a54a; --danger:#f2867d; --page:#ffffff;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1513; --surface:#18201d; --sunken:#111816; --ink:#e6eeeb; --muted:#97a8a2; --line:#2b3733;
+  --accent:#43b89c; --accent-ink:#06231c; --accent-soft:#1b3a32; --warn:#e3a54a; --danger:#f2867d; --page:#ffffff;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3); color-scheme:dark}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.6}
+.wrap{max-width:1280px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+h1{font-family:var(--f-display);font-size:1.55rem;margin:0;line-height:1.3;text-wrap:balance}
+.sub{color:var(--muted);margin:2px 0 0;font-size:.92rem}
+.shield{display:flex;align-items:center;gap:8px;background:var(--accent-soft);color:var(--ink);border-radius:999px;padding:6px 14px;font-size:.85rem;font-weight:500}
+.shield svg{flex:none;color:var(--accent)}
+.headtools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button,.btn{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:7px 12px;display:inline-flex;align-items:center;gap:6px;line-height:1.3}
+button:hover{border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button.ghost{background:transparent}
+button.danger{color:var(--danger)}
+button[disabled]{opacity:.45;cursor:not-allowed}
+button.on{background:var(--accent-soft);border-color:var(--accent);font-weight:600}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 10px;min-width:0}
+label{font-size:.85rem;color:var(--muted)}
+.drop{border:2px dashed var(--line);border-radius:14px;background:var(--surface);padding:18px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;transition:border-color .15s,background .15s}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop strong{font-family:var(--f-display);font-size:1.02rem;font-weight:600}
+.drop p{margin:0;color:var(--muted);font-size:.88rem}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 6px 4px 12px;font-size:.85rem;max-width:100%}
+.chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.chip .tag{background:var(--sunken);color:var(--muted);border-radius:999px;padding:0 8px;font-size:.75rem}
+.chip button{border:none;padding:2px 8px;border-radius:999px;background:transparent;color:var(--muted)}
+.bench{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+@media (max-width:900px){.bench{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);min-width:0}
+.tabs{display:flex;gap:4px;padding:8px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tabs button{border:none;background:transparent;border-radius:8px;padding:8px 14px;color:var(--muted);font-weight:500}
+.tabs button[aria-selected="true"]{background:var(--accent-soft);color:var(--ink);font-weight:600}
+.view{padding:16px;min-height:360px}
+.hint{color:var(--muted);font-size:.86rem;margin:0 0 12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
+.card{background:var(--sunken);border:1px solid var(--line);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:6px;cursor:grab;position:relative}
+.card.dragging{opacity:.4}.card.target{outline:2px dashed var(--accent);outline-offset:2px}
+.thumb{background:var(--page);border-radius:4px;display:flex;align-items:center;justify-content:center;aspect-ratio:3/4;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.thumb canvas{max-width:100%;max-height:100%;display:block}
+.cardmeta{display:flex;justify-content:space-between;align-items:center;font-size:.78rem;color:var(--muted);gap:6px}
+.cardmeta b{font-family:var(--f-mono);color:var(--ink);font-weight:500}
+.cardmeta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cardtools{display:flex;gap:4px;justify-content:space-between}
+.cardtools button{padding:4px 7px;font-size:.8rem;flex:1;justify-content:center}
+.badge{position:absolute;top:12px;inset-inline-start:12px;background:var(--accent);color:var(--accent-ink);font-size:.7rem;border-radius:999px;padding:1px 8px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.toolbar .sep{width:1px;height:24px;background:var(--line)}
+.pgnum{font-family:var(--f-mono);font-size:.9rem;min-width:70px;text-align:center}
+.editor{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:14px;align-items:start}
+@media (max-width:700px){.editor{grid-template-columns:minmax(0,1fr)}}
+.stage{background:var(--sunken);border-radius:10px;padding:14px;overflow:auto;display:flex;justify-content:center;min-width:0}
+.sheet{position:relative;background:var(--page);box-shadow:0 2px 10px rgba(0,0,0,.2);flex:none}
+.sheet canvas{display:block}
+.thumb canvas,.sheet canvas{direction:ltr}
+.layer{position:absolute;inset:0;touch-action:none}
+.layer.t-text{cursor:text}.layer.t-box{cursor:crosshair}
+.ov{position:absolute;cursor:move;user-select:none}
+.ov .in{white-space:pre;line-height:1.35;transform-origin:center center;position:absolute;inset:0}
+.ov.sel{outline:2px solid #1f7aec;outline-offset:1px}
+.ov.box .in{background:#fff;outline:1px dashed #9aa5a1}
+.ov .grip{position:absolute;width:12px;height:12px;background:#1f7aec;border-radius:2px;inset-inline-end:-6px;bottom:-6px;cursor:nwse-resize}
+.ghostbox{position:absolute;border:1.5px dashed #1f7aec;background:rgba(31,122,236,.08);pointer-events:none}
+.inspector{display:flex;flex-direction:column;gap:10px;background:var(--sunken);border-radius:10px;padding:12px;font-size:.88rem}
+.inspector h3,.rail h3{font-family:var(--f-display);font-size:.95rem;margin:0;font-weight:600}
+.field{display:flex;flex-direction:column;gap:4px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.swatches{display:flex;gap:6px}
+.swatches button{width:26px;height:26px;border-radius:50%;padding:0;border:2px solid var(--line)}
+.swatches button.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--surface) inset}
+.rail{padding:16px;display:flex;flex-direction:column;gap:16px}
+.rail section{display:flex;flex-direction:column;gap:10px}
+.rail section+section{border-top:1px solid var(--line);padding-top:16px}
+.outs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.outs button{flex-direction:column;align-items:flex-start;gap:2px;padding:10px;text-align:start}
+.outs button small{color:var(--muted);font-size:.74rem;font-weight:400}
+.outs button.primary small{color:inherit;opacity:.85}
+.outs .ext{font-family:var(--f-mono);font-size:.78rem;letter-spacing:.04em}
+.radios{display:flex;flex-direction:column;gap:4px;font-size:.86rem}
+.radios label{color:var(--ink);display:flex;gap:6px;align-items:center;font-size:.86rem}
+.progress{height:6px;background:var(--sunken);border-radius:999px;overflow:hidden}
+.progress i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
+.status{font-size:.82rem;color:var(--muted);min-height:1.3em}
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted);text-align:center;min-height:300px}
+.notes{font-size:.82rem;color:var(--muted);display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
+.notes li{display:flex;gap:8px}.notes li::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-top:.55em}
+.toast{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:10px;font-size:.9rem;box-shadow:var(--shadow);z-index:50;max-width:calc(100% - 32px)}
+.warnline{color:var(--warn);font-size:.82rem}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap" id="wrap" dir="rtl" lang="ar">
+  <header>
+    <div>
+      <h1 data-i18n="title">ورشة PDF الخاصة</h1>
+      <p class="sub" data-i18n="sub">حوّل ملفات PDF إلى Word ونص وصور، رتّب صفحاتها، ادمجها، واكتب عليها.</p>
+    </div>
+    <div class="headtools"><div class="shield">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>
+      <span data-i18n="shield">الملفات لا تغادر جهازك ولا يُحفظ أي شيء</span>
+    </div>
+    <button id="langBtn" type="button" lang="en">English</button></div>
+  </header>
+
+  <div class="drop" id="drop">
+    <div>
+      <strong data-i18n="dropT">اسحب ملفات PDF أو صور هنا</strong>
+      <p data-i18n="dropP">تقدر تضيف أكثر من ملف، وتنضم صفحاتها بالترتيب. الصور تتحول لصفحات PDF.</p>
+    </div>
+    <div class="row">
+      <label class="btn" for="pick" style="color:var(--accent-ink);background:var(--accent);border-color:var(--accent);font-weight:600;font-size:inherit" data-i18n="choose">اختيار ملفات</label>
+      <input id="pick" type="file" accept="application/pdf,.pdf,image/*" multiple hidden>
+      <button id="clearAll" class="danger ghost" type="button" data-i18n="clear">مسح كل شيء</button>
+    </div>
+  </div>
+  <div class="chips" id="chips"></div>
+
+  <div class="bench">
+    <div class="panel">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-organize" aria-selected="true" data-tab="organize" type="button" data-i18n="tabOrg">ترتيب الصفحات</button>
+        <button role="tab" id="tab-edit" aria-selected="false" data-tab="edit" type="button" data-i18n="tabEdit">تعديل وكتابة</button>
+      </div>
+      <div class="view" id="view-organize">
+        <p class="hint" data-i18n="hintOrg">اسحب الصفحة لتغيير مكانها، أو استخدم الأسهم. اضغط مرتين على الصفحة لفتحها في التعديل.</p>
+        <div class="grid" id="grid"></div>
+      </div>
+      <div class="view" id="view-edit" hidden>
+        <div class="toolbar">
+          <button id="prevPg" type="button" data-i18n-aria="prev">→</button>
+          <span class="pgnum" id="pgLabel">–</span>
+          <button id="nextPg" type="button" data-i18n-aria="next">←</button>
+          <span class="sep"></span>
+          <button data-tool="move" class="on" type="button" data-i18n="tMove">تحديد وتحريك</button>
+          <button data-tool="text" type="button" data-i18n="tText">إضافة نص</button>
+          <button data-tool="box" type="button" data-i18n="tBox">تغطية بيضاء</button>
+          <span class="sep"></span>
+          <button id="zoomOut" type="button" data-i18n-aria="zOut">−</button>
+          <button id="zoomIn" type="button" data-i18n-aria="zIn">+</button>
+        </div>
+        <p class="hint" data-i18n="hintEdit">لتعديل نص موجود: غطّه بـ«تغطية بيضاء» ثم اكتب النص الجديد فوقه، أو أضف نصاً وفعّل «خلفية بيضاء».</p>
+        <div class="editor">
+          <div class="stage" id="stage"><div class="sheet" id="sheet"><canvas id="editCanvas"></canvas><div class="layer" id="layer"></div></div></div>
+          <div class="inspector" id="inspector">
+            <h3 data-i18n="selected">العنصر المحدد</h3>
+            <p class="hint" id="inspEmpty" style="margin:0" data-i18n="inspEmpty">اختر «إضافة نص» ثم اضغط على الصفحة، أو اضغط على عنصر لتعديله.</p>
+            <div id="inspBody" hidden style="display:flex;flex-direction:column;gap:10px">
+              <div class="field" id="fText"><label for="ovText" data-i18n="lText">النص</label><textarea id="ovText" rows="3"></textarea></div>
+              <div class="row" id="fSize"><label for="ovSize" data-i18n="lSize">الحجم</label><input id="ovSize" type="number" min="6" max="96" step="1" style="width:72px"><button id="ovBold" type="button"><b data-i18n="bold">غامق</b></button></div>
+              <div class="field" id="fColor"><label data-i18n="lColor">اللون</label><div class="swatches" id="swatches"></div></div>
+              <label class="row" id="fBg" style="color:var(--ink)"><input type="checkbox" id="ovBg"> <span data-i18n="lBg">خلفية بيضاء تغطي ما تحته</span></label>
+              <button id="ovDelete" class="danger" type="button" data-i18n="delItem">حذف العنصر</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="panel rail">
+      <section>
+        <h3 data-i18n="saveH">الحفظ والتحويل</h3>
+        <div class="field"><label for="outName" data-i18n="fname">اسم الملف</label><input id="outName" value="مستند"></div>
+        <div class="field"><label for="range" data-i18n="pages">الصفحات</label><input id="range" data-i18n-ph="rangePh" dir="ltr"></div>
+        <div class="outs">
+          <button class="primary" data-out="pdf" type="button"><span class="ext">PDF</span><span data-i18n="oPdf">حفظ المعدّل</span><small data-i18n="oPdfS">دمج، ترتيب، كتابة</small></button>
+          <button data-out="docx" type="button"><span class="ext">DOCX</span><span data-i18n="oDocx">إلى Word</span><small data-i18n="oDocxS">نص قابل للتعديل</small></button>
+          <button data-out="png" type="button"><span class="ext">PNG</span><span data-i18n="oPng">إلى صور</span><small data-i18n="oPngS">صورة لكل صفحة</small></button>
+          <button data-out="txt" type="button"><span class="ext">TXT</span><span data-i18n="oTxt">نص فقط</span><small data-i18n="oTxtS">للنسخ واللصق</small></button>
+        </div>
+        <div class="progress" aria-hidden="true"><i id="bar"></i></div>
+        <div class="status" id="status" role="status"></div>
+      </section>
+      <section>
+        <h3 data-i18n="wordH">خيارات Word</h3>
+        <div class="radios">
+          <label><input type="radio" name="wmode" value="text" checked> <span data-i18n="wText">نص قابل للتعديل</span></label>
+          <label><input type="radio" name="wmode" value="image"> <span data-i18n="wImg">نسخة مطابقة للشكل (صور)</span></label>
+          <label><input type="radio" name="wmode" value="both"> <span data-i18n="wBoth">الاثنين معاً</span></label>
+        </div>
+      </section>
+      <section>
+        <h3 data-i18n="wmH">علامة مائية</h3>
+        <label class="row" style="color:var(--ink)"><input type="checkbox" id="wmOn"> <span data-i18n="wmOn">إضافة على كل الصفحات</span></label>
+        <div class="row"><input id="wmText" value="سري — للاستخدام الداخلي" style="flex:1"></div>
+        <div class="row"><label for="wmOp" data-i18n="opacity">الشفافية</label><input id="wmOp" type="range" min="5" max="60" value="18" style="flex:1"></div>
+      </section>
+      <section>
+        <h3 data-i18n="privH">الخصوصية</h3>
+        <ul class="notes">
+          <li data-i18n="priv1">كل المعالجة داخل المتصفح، ولا يوجد خادم يستقبل الملفات.</li>
+          <li data-i18n="priv2">لا يُحفظ شيء في المتصفح؛ إغلاق الصفحة أو «مسح كل شيء» يمحو الملفات من الذاكرة.</li>
+          <li data-i18n="priv3">الملفات الممسوحة ضوئياً (صور بدون نص) تتحول لـ Word كصور فقط.</li>
+        </ul>
+      </section>
+    </aside>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="vendor/pdf.min.js"></script>
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script>
+(() => {
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("vendor/pdf.worker.min.js", location.href).href;
+const { PDFDocument, degrees, rgb, StandardFonts } = PDFLib;
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const AR = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
+const AR_G = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/g;
+const LAT_G = /[A-Za-z]/g;
+const FONT = '"IBM Plex Sans Arabic", Tahoma, Arial, sans-serif';
+const COLORS = ["#111111", "#b3261e", "#0d4fb3", "#0d6b58"];
+let LANG = /^ar/i.test(navigator.language || "") ? "ar" : "en";
+const T = (ar, en) => (LANG === "en" ? en : ar);
+const I18N = {
+  title: ["ورشة PDF الخاصة", "Private PDF Workshop"],
+  sub: ["حوّل ملفات PDF إلى Word ونص وصور، رتّب صفحاتها، ادمجها، واكتب عليها.", "Convert PDFs to Word, text and images. Reorder, merge, and write on pages."],
+  shield: ["الملفات لا تغادر جهازك ولا يُحفظ أي شيء", "Files never leave your device. Nothing is stored."],
+  dropT: ["اسحب ملفات PDF أو صور هنا", "Drop PDFs or images here"],
+  dropP: ["تقدر تضيف أكثر من ملف، وتنضم صفحاتها بالترتيب. الصور تتحول لصفحات PDF.", "Add several files and their pages join in order. Images become PDF pages."],
+  choose: ["اختيار ملفات", "Choose files"], clear: ["مسح كل شيء", "Clear all"],
+  tabOrg: ["ترتيب الصفحات", "Pages"], tabEdit: ["تعديل وكتابة", "Edit and write"],
+  hintOrg: ["اسحب الصفحة لتغيير مكانها، أو استخدم الأسهم. اضغط مرتين على الصفحة لفتحها في التعديل.", "Drag a page to move it, or use the arrows. Double-click a page to edit it."],
+  prev: ["الصفحة السابقة", "Previous page"], next: ["الصفحة التالية", "Next page"], zOut: ["تصغير", "Zoom out"], zIn: ["تكبير", "Zoom in"],
+  tMove: ["تحديد وتحريك", "Select and move"], tText: ["إضافة نص", "Add text"], tBox: ["تغطية بيضاء", "White-out"],
+  hintEdit: ["لتعديل نص موجود: غطّه بـ«تغطية بيضاء» ثم اكتب النص الجديد فوقه، أو أضف نصاً وفعّل «خلفية بيضاء».", "To change existing text, cover it with White-out and type the new text on top, or add text with a white background."],
+  selected: ["العنصر المحدد", "Selected item"], inspEmpty: ["اختر «إضافة نص» ثم اضغط على الصفحة، أو اضغط على عنصر لتعديله.", "Choose Add text, then click the page. Or click an item to change it."],
+  lText: ["النص", "Text"], lSize: ["الحجم", "Size"], bold: ["غامق", "Bold"], lColor: ["اللون", "Color"], lBg: ["خلفية بيضاء تغطي ما تحته", "White background covers what is under it"], delItem: ["حذف العنصر", "Delete item"],
+  saveH: ["الحفظ والتحويل", "Save and convert"], fname: ["اسم الملف", "File name"], pages: ["الصفحات", "Pages"], rangePh: ["الكل — أو مثلاً 1-3, 5", "All — or e.g. 1-3, 5"],
+  oPdf: ["حفظ المعدّل", "Save edited"], oPdfS: ["دمج، ترتيب، كتابة", "Merged, ordered, edited"], oDocx: ["إلى Word", "To Word"], oDocxS: ["نص قابل للتعديل", "Editable text"],
+  oPng: ["إلى صور", "To images"], oPngS: ["صورة لكل صفحة", "One per page"], oTxt: ["نص فقط", "Text only"], oTxtS: ["للنسخ واللصق", "To copy and paste"],
+  wordH: ["خيارات Word", "Word options"], wText: ["نص قابل للتعديل", "Editable text"], wImg: ["نسخة مطابقة للشكل (صور)", "Exact look (page images)"], wBoth: ["الاثنين معاً", "Both"],
+  wmH: ["علامة مائية", "Watermark"], wmOn: ["إضافة على كل الصفحات", "Add to every page"], opacity: ["الشفافية", "Opacity"],
+  privH: ["الخصوصية", "Privacy"], priv1: ["كل المعالجة داخل المتصفح، ولا يوجد خادم يستقبل الملفات.", "Everything runs in your browser. No server receives your files."],
+  priv2: ["لا يُحفظ شيء في المتصفح؛ إغلاق الصفحة أو «مسح كل شيء» يمحو الملفات من الذاكرة.", "Nothing is saved. Closing the page or Clear all wipes the files from memory."],
+  priv3: ["الملفات الممسوحة ضوئياً (صور بدون نص) تتحول لـ Word كصور فقط.", "Scanned PDFs (images without text) convert to Word as images only."],
+};
+const DEFAULTS = { outName: ["مستند", "document"], wmText: ["سري — للاستخدام الداخلي", "CONFIDENTIAL — INTERNAL USE"] };
+function applyLang() {
+  const k = LANG === "en" ? 1 : 0, w = $("#wrap");
+  w.dir = LANG === "en" ? "ltr" : "rtl"; w.lang = LANG; document.documentElement.lang = LANG;
+  $$("[data-i18n]").forEach(e => (e.textContent = I18N[e.dataset.i18n][k]));
+  $$("[data-i18n-aria]").forEach(e => e.setAttribute("aria-label", I18N[e.dataset.i18nAria][k]));
+  $$("[data-i18n-ph]").forEach(e => (e.placeholder = I18N[e.dataset.i18nPh][k]));
+  for (const id in DEFAULTS) { const e = $("#" + id); if (DEFAULTS[id].includes(e.value)) e.value = DEFAULTS[id][k]; }
+  $("#prevPg").textContent = LANG === "en" ? "←" : "→"; $("#nextPg").textContent = LANG === "en" ? "→" : "←";
+  $("#langBtn").textContent = LANG === "en" ? "عربي" : "English"; $("#langBtn").lang = LANG === "en" ? "ar" : "en";
+  document.title = I18N.title[k];
+}
+
+
+const state = { sources: [], pages: [], cur: 0, tool: "move", sel: null, zoom: 1, vp: null, tab: "organize" };
+let uid = 0;
+
+/* ---------- utilities ---------- */
+let toastT;
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 3200); }
+function status(msg, pct) { $("#status").textContent = msg || ""; $("#bar").style.width = (pct == null ? 0 : pct) + "%"; }
+const totalRot = p => (((p.baseRot + p.rot) % 360) + 360) % 360;
+const isRtl = s => (s.match(AR_G) || []).length >= (s.match(LAT_G) || []).length && AR.test(s);
+const toBytes = blob => blob.arrayBuffer().then(b => new Uint8Array(b));
+const canvasBlob = (c, type = "image/png", q) => new Promise(r => c.toBlob(r, type, q));
+
+let downloads = null;
+if (window.claude && window.claude.use) window.claude.use("downloads").then(d => (downloads = d)).catch(() => {});
+async function saveFile(filename, data) {
+  if (downloads) {
+    try { await downloads.save({ filename, data }); toast(T("تم الحفظ: ", "Saved: ") + filename); }
+    catch (e) {
+      if (e && e.code === "declined") toast(T("تم إلغاء الحفظ", "Save cancelled"));
+      else if (e && e.code === "rate_limited") toast(T("انتظر لحظة ثم أعد المحاولة", "Wait a moment, then try again"));
+      else toast(T("تعذّر الحفظ في هذا العرض", "Saving is not available in this view"));
+    }
+    return;
+  }
+  const blob = data instanceof Blob ? data : new Blob([data]);
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+/* ---------- loading files ---------- */
+async function imageToPdf(file) {
+  const out = await PDFDocument.create();
+  let bytes = await toBytes(file), img;
+  if (/png/i.test(file.type)) img = await out.embedPng(bytes);
+  else if (/jpe?g/i.test(file.type)) img = await out.embedJpg(bytes);
+  else {
+    const bmp = await createImageBitmap(file); const c = document.createElement("canvas");
+    c.width = bmp.width; c.height = bmp.height; c.getContext("2d").drawImage(bmp, 0, 0);
+    img = await out.embedJpg(await toBytes(await canvasBlob(c, "image/jpeg", 0.92)));
+  }
+  const land = img.width > img.height, W = land ? 842 : 595, H = land ? 595 : 842, m = 18;
+  const s = Math.min((W - 2 * m) / img.width, (H - 2 * m) / img.height);
+  const page = out.addPage([W, H]);
+  page.drawImage(img, { x: (W - img.width * s) / 2, y: (H - img.height * s) / 2, width: img.width * s, height: img.height * s });
+  return out.save();
+}
+
+async function addSource(name, bytes, tag) {
+  let doc;
+  try { doc = await pdfjsLib.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise; }
+  catch (e) { toast(e && e.name === "PasswordException" ? T(`«${name}» محمي بكلمة مرور. افتحه وأزل الحماية أولاً.`, `"${name}" is password-protected. Remove the password first.`) : T(`تعذّر فتح «${name}»`, `Could not open "${name}"`)); return; }
+  const src = { id: ++uid, name, bytes, doc, lib: null, tag };
+  state.sources.push(src);
+  for (let i = 0; i < doc.numPages; i++) {
+    const pg = await doc.getPage(i + 1);
+    state.pages.push({ id: ++uid, src, idx: i, baseRot: pg.rotate || 0, rot: 0, overlays: [] });
+  }
+  if (state.sources.length === 1 || tag !== "sample") $("#outName").value = name.replace(/\.[^.]+$/, "");
+}
+
+async function addFiles(files) {
+  const list = [...files]; if (!list.length) return;
+  // a real file replaces the sample
+  const sample = state.sources.find(s => s.tag === "sample"); if (sample) removeSource(sample.id, true);
+  for (let i = 0; i < list.length; i++) {
+    const f = list[i]; status(T(`تحميل ${f.name}…`, `Loading ${f.name}…`), ((i + 0.5) / list.length) * 100);
+    if (/pdf$/i.test(f.type) || /\.pdf$/i.test(f.name)) await addSource(f.name, await toBytes(f));
+    else if (/^image\//.test(f.type)) { try { await addSource(f.name, await imageToPdf(f)); } catch { toast(T(`تعذّر قراءة الصورة «${f.name}»`, `Could not read the image "${f.name}"`)); } }
+    else toast(T(`«${f.name}» ليس PDF ولا صورة`, `"${f.name}" is not a PDF or an image`));
+  }
+  status("");
+  renderAll();
+}
+
+function removeSource(id, silent) {
+  const src = state.sources.find(s => s.id === id); if (!src) return;
+  src.doc.destroy(); src.bytes = null; src.lib = null;
+  state.sources = state.sources.filter(s => s !== src);
+  state.pages = state.pages.filter(p => p.src !== src);
+  state.cur = Math.min(state.cur, Math.max(0, state.pages.length - 1)); state.sel = null;
+  if (!silent) renderAll();
+}
+
+function clearAll() {
+  state.sources.forEach(s => { s.doc.destroy(); s.bytes = null; s.lib = null; });
+  state.sources = []; state.pages = []; state.cur = 0; state.sel = null;
+  $("#pick").value = ""; $("#range").value = ""; $("#outName").value = T("مستند", "document");
+  status(""); renderAll(); toast(T("تم مسح كل الملفات من الذاكرة", "All files cleared from memory"));
+}
+
+/* ---------- rendering pages ---------- */
+async function renderPdfPage(p, canvas, scaleFn) {
+  const pg = await p.src.doc.getPage(p.idx + 1);
+  const base = pg.getViewport({ scale: 1, rotation: totalRot(p) });
+  const scale = scaleFn(base); const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const vp = pg.getViewport({ scale, rotation: totalRot(p) });
+  canvas.dir = "ltr";
+  canvas.width = Math.floor(vp.width * dpr); canvas.height = Math.floor(vp.height * dpr);
+  canvas.style.width = Math.floor(vp.width) + "px"; canvas.style.height = Math.floor(vp.height) + "px";
+  if (canvas._task) { try { canvas._task.cancel(); } catch {} }
+  const task = pg.render({ canvasContext: canvas.getContext("2d"), viewport: pg.getViewport({ scale: scale * dpr, rotation: totalRot(p) }) });
+  canvas._task = task;
+  try { await task.promise; } catch {}
+  return vp;
+}
+
+function renderChips() {
+  $("#chips").innerHTML = "";
+  state.sources.forEach(s => {
+    const n = state.pages.filter(p => p.src === s).length;
+    const el = document.createElement("div"); el.className = "chip";
+    el.innerHTML = `<span></span>${s.tag === "sample" ? `<i class="tag">${T("ملف تجريبي", "Sample")}</i>` : ""}<i class="tag">${n} ${T("ص", "p")}</i><button type="button" aria-label="${T("إزالة", "Remove")}">✕</button>`;
+    el.firstElementChild.textContent = s.name;
+    el.querySelector("button").onclick = () => removeSource(s.id);
+    $("#chips").appendChild(el);
+  });
+}
+
+let dragId = null;
+function renderGrid() {
+  const g = $("#grid"); g.innerHTML = "";
+  if (!state.pages.length) { g.innerHTML = `<div class="empty" style="grid-column:1/-1"><strong>${T("لا توجد صفحات", "No pages yet")}</strong><span>${T("أضف ملف PDF أو صورة من الأعلى للبدء.", "Add a PDF or an image above to start.")}</span></div>`; return; }
+  state.pages.forEach((p, i) => {
+    const c = document.createElement("div"); c.className = "card"; c.draggable = true; c.dataset.id = p.id;
+    c.innerHTML = `<div class="thumb"><canvas></canvas></div>
+      ${p.overlays.length ? `<span class="badge">${T("معدّلة", "Edited")}</span>` : ""}
+      <div class="cardmeta"><b>${i + 1}</b><span></span></div>
+      <div class="cardtools">
+        <button type="button" data-a="earlier" title="${T("تقديم", "Move earlier")}" aria-label="${T("تقديم", "Move earlier")}">${T("→", "←")}</button>
+        <button type="button" data-a="rotl" title="${T("تدوير يسار", "Rotate left")}" aria-label="${T("تدوير يسار", "Rotate left")}">↺</button>
+        <button type="button" data-a="rotr" title="${T("تدوير يمين", "Rotate right")}" aria-label="${T("تدوير يمين", "Rotate right")}">↻</button>
+        <button type="button" data-a="del" title="${T("حذف", "Delete")}" aria-label="${T("حذف", "Delete")}" class="danger">✕</button>
+        <button type="button" data-a="later" title="${T("تأخير", "Move later")}" aria-label="${T("تأخير", "Move later")}">${T("←", "→")}</button>
+      </div>`;
+    c.querySelector(".cardmeta span").textContent = p.src.name;
+    c.addEventListener("dblclick", () => { state.cur = i; setTab("edit"); });
+    c.querySelectorAll("button").forEach(b => b.onclick = e => { e.stopPropagation(); pageAction(p, b.dataset.a); });
+    c.addEventListener("dragstart", e => { dragId = p.id; c.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; });
+    c.addEventListener("dragend", () => { dragId = null; c.classList.remove("dragging"); $$(".card.target").forEach(x => x.classList.remove("target")); });
+    c.addEventListener("dragover", e => { if (dragId && dragId !== p.id) { e.preventDefault(); c.classList.add("target"); } });
+    c.addEventListener("dragleave", () => c.classList.remove("target"));
+    c.addEventListener("drop", e => {
+      e.preventDefault(); e.stopPropagation(); if (!dragId) return;
+      const from = state.pages.findIndex(x => x.id === dragId); const to = state.pages.findIndex(x => x.id === p.id);
+      const [m] = state.pages.splice(from, 1); state.pages.splice(to, 0, m); renderGrid();
+    });
+    g.appendChild(c);
+    renderPdfPage(p, c.querySelector("canvas"), v => 220 / Math.max(v.width, v.height));
+  });
+}
+
+function pageAction(p, a) {
+  const i = state.pages.indexOf(p);
+  if (a === "rotl") p.rot -= 90;
+  if (a === "rotr") p.rot += 90;
+  if (a === "del") { state.pages.splice(i, 1); toast(T(`حُذفت الصفحة ${i + 1}`, `Deleted page ${i + 1}`)); }
+  if (a === "earlier" && i > 0) [state.pages[i - 1], state.pages[i]] = [state.pages[i], state.pages[i - 1]];
+  if (a === "later" && i < state.pages.length - 1) [state.pages[i + 1], state.pages[i]] = [state.pages[i], state.pages[i + 1]];
+  renderGrid(); renderChips();
+}
+
+/* ---------- editor: overlays live in PDF space ---------- */
+// overlay: {id, kind:'text'|'box', ox, oy (PDF origin = bottom-left as seen when created), w, h (pt), r (rotation at creation), text, size, color, bold, bg}
+const dirVec = r => { const a = (r * Math.PI) / 180; return [Math.cos(a), Math.sin(a)]; };
+function measure(ov) {
+  const c = measure.c || (measure.c = document.createElement("canvas").getContext("2d"));
+  c.font = `${ov.bold ? 700 : 400} ${ov.size}px ${FONT}`;
+  const lines = (ov.text || " ").split("\n"); const pad = ov.size * 0.25;
+  ov.w = Math.max(...lines.map(l => c.measureText(l || " ").width)) + pad * 2;
+  ov.h = lines.length * ov.size * 1.35 + pad * 2;
+}
+function ovCorners(ov) {
+  const [ux, uy] = dirVec(ov.r), [vx, vy] = dirVec(ov.r + 90);
+  return [[ov.ox, ov.oy], [ov.ox + ux * ov.w, ov.oy + uy * ov.w], [ov.ox + vx * ov.h, ov.oy + vy * ov.h], [ov.ox + ux * ov.w + vx * ov.h, ov.oy + uy * ov.w + vy * ov.h]];
+}
+
+async function renderEditor() {
+  const p = state.pages[state.cur];
+  $("#pgLabel").textContent = p ? `${state.cur + 1} / ${state.pages.length}` : "–";
+  $("#prevPg").disabled = !p || state.cur === 0; $("#nextPg").disabled = !p || state.cur >= state.pages.length - 1;
+  const sheet = $("#sheet");
+  if (!p) { sheet.hidden = true; renderInspector(); return; }
+  sheet.hidden = false;
+  const avail = Math.max(260, $("#stage").clientWidth - 28);
+  state.vp = await renderPdfPage(p, $("#editCanvas"), v => (Math.min(avail, 900) / v.width) * state.zoom);
+  sheet.style.width = state.vp.width + "px"; sheet.style.height = state.vp.height + "px";
+  drawOverlays();
+}
+
+function drawOverlays() {
+  const p = state.pages[state.cur], vp = state.vp, layer = $("#layer");
+  layer.className = "layer t-" + state.tool; layer.innerHTML = "";
+  if (!p || !vp) return;
+  const s = vp.scale, rc = totalRot(p);
+  p.overlays.forEach(ov => {
+    const pts = ovCorners(ov).map(([x, y]) => vp.convertToViewportPoint(x, y));
+    const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
+    const el = document.createElement("div"); el.className = "ov " + ov.kind + (state.sel === ov.id ? " sel" : "");
+    const L = Math.min(...xs), T = Math.min(...ys), BW = Math.max(...xs) - L, BH = Math.max(...ys) - T;
+    Object.assign(el.style, { left: L + "px", top: T + "px", width: BW + "px", height: BH + "px" });
+    const inn = document.createElement("div"); inn.className = "in";
+    const w = ov.w * s, h = ov.h * s, d = rc - ov.r;
+    Object.assign(inn.style, { width: w + "px", height: h + "px", left: (BW - w) / 2 + "px", top: (BH - h) / 2 + "px", transform: d ? `rotate(${d}deg)` : "" });
+    if (ov.kind === "text") {
+      const rtl = isRtl(ov.text);
+      Object.assign(inn.style, { font: `${ov.bold ? 700 : 400} ${ov.size * s}px/1.35 ${FONT}`, color: ov.color, padding: ov.size * 0.25 * s + "px", direction: rtl ? "rtl" : "ltr", textAlign: rtl ? "right" : "left", background: ov.bg ? "#fff" : "transparent" });
+      inn.textContent = ov.text;
+    }
+    el.appendChild(inn);
+    if (ov.kind === "box" && state.sel === ov.id && d === 0) { const g = document.createElement("div"); g.className = "grip"; el.appendChild(g); g.addEventListener("pointerdown", e => startDrag(e, ov, "resize")); }
+    el.addEventListener("pointerdown", e => { if (e.target.classList.contains("grip")) return; startDrag(e, ov, "move"); });
+    layer.appendChild(el);
+  });
+}
+
+function pdfDelta(dx, dy) {
+  const a = state.vp.convertToPdfPoint(0, 0), b = state.vp.convertToPdfPoint(dx, dy);
+  return [b[0] - a[0], b[1] - a[1]];
+}
+function startDrag(e, ov, mode) {
+  e.stopPropagation(); e.preventDefault();
+  state.sel = ov.id; renderInspector(); drawOverlays();
+  const sx = e.clientX, sy = e.clientY, o = { ox: ov.ox, oy: ov.oy, w: ov.w, h: ov.h }, s = state.vp.scale;
+  const move = ev => {
+    const dx = ev.clientX - sx, dy = ev.clientY - sy;
+    if (mode === "move") { const [px, py] = pdfDelta(dx, dy); ov.ox = o.ox + px; ov.oy = o.oy + py; }
+    else {
+      // resize box: grow right/down in view; origin (view bottom-left) moves down with height
+      const nw = Math.max(6, o.w + (dx / s)), nh = Math.max(6, o.h + (dy / s));
+      const [px, py] = pdfDelta(0, (nh - o.h) * s); ov.w = nw; ov.h = nh; ov.ox = o.ox + px; ov.oy = o.oy + py;
+    }
+    drawOverlays();
+  };
+  const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); renderGrid(); };
+  window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+}
+
+$("#layer").addEventListener("pointerdown", e => {
+  const p = state.pages[state.cur]; if (!p || e.target !== $("#layer")) return;
+  const rect = $("#layer").getBoundingClientRect(), x = e.clientX - rect.left, y = e.clientY - rect.top, s = state.vp.scale;
+  if (state.tool === "move") { state.sel = null; renderInspector(); drawOverlays(); return; }
+  if (state.tool === "text") {
+    const ov = { id: ++uid, kind: "text", text: T("نص جديد", "New text"), size: 14, color: COLORS[0], bold: false, bg: false, r: totalRot(p) };
+    measure(ov);
+    [ov.ox, ov.oy] = state.vp.convertToPdfPoint(x, y + (ov.h * s) / 2);
+    const [ax, ay] = pdfDelta(-ov.w * s * (isRtl(ov.text) ? 1 : 0), 0); ov.ox += ax; ov.oy += ay;
+    p.overlays.push(ov); state.sel = ov.id; setTool("move"); renderInspector(); drawOverlays(); renderGrid();
+    setTimeout(() => { const t = $("#ovText"); t.focus(); t.select(); }, 0);
+    return;
+  }
+  if (state.tool === "box") {
+    e.preventDefault();
+    const gb = document.createElement("div"); gb.className = "ghostbox"; $("#layer").appendChild(gb);
+    const move = ev => { const cx = ev.clientX - rect.left, cy = ev.clientY - rect.top; Object.assign(gb.style, { left: Math.min(x, cx) + "px", top: Math.min(y, cy) + "px", width: Math.abs(cx - x) + "px", height: Math.abs(cy - y) + "px" }); };
+    const up = ev => {
+      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+      const cx = ev.clientX - rect.left, cy = ev.clientY - rect.top;
+      let L = Math.min(x, cx), T = Math.min(y, cy), W = Math.abs(cx - x), H = Math.abs(cy - y);
+      if (W < 8 || H < 8) { W = 120; H = 24; }
+      const ov = { id: ++uid, kind: "box", w: W / s, h: H / s, r: totalRot(p) };
+      [ov.ox, ov.oy] = state.vp.convertToPdfPoint(L, T + H);
+      p.overlays.push(ov); state.sel = ov.id; renderInspector(); drawOverlays(); renderGrid();
+    };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+  }
+});
+
+function curOv() { const p = state.pages[state.cur]; return p && p.overlays.find(o => o.id === state.sel); }
+function renderInspector() {
+  const ov = curOv(); $("#inspEmpty").hidden = !!ov; $("#inspBody").hidden = !ov; if (!ov) return;
+  const t = ov.kind === "text"; ["#fText", "#fSize", "#fColor", "#fBg"].forEach(s => ($(s).hidden = !t));
+  if (t) {
+    if (document.activeElement !== $("#ovText")) $("#ovText").value = ov.text;
+    $("#ovSize").value = ov.size; $("#ovBold").classList.toggle("on", ov.bold); $("#ovBg").checked = ov.bg;
+    $$("#swatches button").forEach(b => b.classList.toggle("on", b.dataset.c === ov.color));
+  }
+}
+function retext(fn) {
+  const ov = curOv(); if (!ov || ov.kind !== "text") return;
+  // keep the visual top-left anchored while the box changes size
+  const s = state.vp.scale, oldH = ov.h; fn(ov); measure(ov);
+  const [px, py] = pdfDelta(0, (ov.h - oldH) * s); ov.ox += px; ov.oy += py;
+  renderInspector(); drawOverlays();
+}
+COLORS.forEach(c => { const b = document.createElement("button"); b.type = "button"; b.dataset.c = c; b.style.background = c; b.setAttribute("aria-label", T("لون", "Color")); b.onclick = () => retext(o => (o.color = c)); $("#swatches").appendChild(b); });
+$("#ovText").addEventListener("input", e => retext(o => (o.text = e.target.value)));
+$("#ovSize").addEventListener("input", e => { const v = +e.target.value; if (v >= 6 && v <= 96) retext(o => (o.size = v)); });
+$("#ovBold").onclick = () => retext(o => (o.bold = !o.bold));
+$("#ovBg").onchange = e => retext(o => (o.bg = e.target.checked));
+$("#ovDelete").onclick = () => { const p = state.pages[state.cur]; p.overlays = p.overlays.filter(o => o.id !== state.sel); state.sel = null; renderInspector(); drawOverlays(); renderGrid(); };
+document.addEventListener("keydown", e => {
+  if (state.tab !== "edit" || !state.sel || /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); $("#ovDelete").click(); }
+});
+
+function setTool(t) { state.tool = t; $$("[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t)); $("#layer").className = "layer t-" + t; }
+$$("[data-tool]").forEach(b => b.onclick = () => setTool(b.dataset.tool));
+$("#prevPg").onclick = () => { if (state.cur > 0) { state.cur--; state.sel = null; renderEditor(); renderInspector(); } };
+$("#nextPg").onclick = () => { if (state.cur < state.pages.length - 1) { state.cur++; state.sel = null; renderEditor(); renderInspector(); } };
+$("#zoomIn").onclick = () => { state.zoom = Math.min(3, state.zoom * 1.25); renderEditor(); };
+$("#zoomOut").onclick = () => { state.zoom = Math.max(0.4, state.zoom / 1.25); renderEditor(); };
+
+function setTab(t) {
+  state.tab = t;
+  $$("[data-tab]").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t));
+  $("#view-organize").hidden = t !== "organize"; $("#view-edit").hidden = t !== "edit";
+  if (t === "edit") { renderEditor(); renderInspector(); } else renderGrid();
+}
+$$("[data-tab]").forEach(b => b.onclick = () => setTab(b.dataset.tab));
+
+function renderAll() { renderChips(); state.tab === "edit" ? renderEditor() : renderGrid(); renderInspector(); }
+
+/* ---------- export ---------- */
+function selectedPages() {
+  const v = $("#range").value.trim(); const n = state.pages.length;
+  if (!v) return state.pages.slice();
+  const idx = [];
+  for (const part of v.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).split(/[,،\s]+/).filter(Boolean)) {
+    const m = part.match(/^(\d+)(?:-(\d+))?$/); if (!m) throw new Error(T(`لم أفهم «${part}» في خانة الصفحات`, `Could not read "${part}" in Pages`));
+    let a = +m[1], b = m[2] ? +m[2] : a; if (a > b) [a, b] = [b, a];
+    for (let i = a; i <= b; i++) { if (i < 1 || i > n) throw new Error(T(`الصفحة ${i} غير موجودة (عدد الصفحات ${n})`, `Page ${i} does not exist (${n} pages)`)); idx.push(i - 1); }
+  }
+  return idx.map(i => state.pages[i]);
+}
+
+async function textImage(text, size, color, bold, bg, k = 4) {
+  await document.fonts.ready;
+  const ov = { text, size, bold }; measure(ov);
+  const c = document.createElement("canvas"); c.width = Math.ceil(ov.w * k); c.height = Math.ceil(ov.h * k);
+  const x = c.getContext("2d"); x.scale(k, k);
+  if (bg) { x.fillStyle = "#fff"; x.fillRect(0, 0, ov.w, ov.h); }
+  const rtl = isRtl(text), pad = size * 0.25;
+  x.font = `${bold ? 700 : 400} ${size}px ${FONT}`; x.fillStyle = color; x.textBaseline = "middle";
+  x.direction = rtl ? "rtl" : "ltr"; x.textAlign = rtl ? "right" : "left";
+  text.split("\n").forEach((l, i) => x.fillText(l, rtl ? ov.w - pad : pad, pad + size * 1.35 * (i + 0.5)));
+  return { bytes: await toBytes(await canvasBlob(c)), w: ov.w, h: ov.h };
+}
+
+async function buildPdf(pages, onStep) {
+  const out = await PDFDocument.create();
+  const wmOn = $("#wmOn").checked && $("#wmText").value.trim();
+  let wm = null;
+  if (wmOn) { const t = await textImage($("#wmText").value.trim(), 54, "#7a7a7a", true, false, 3); wm = { img: await out.embedPng(t.bytes), w: t.w, h: t.h }; }
+  for (let i = 0; i < pages.length; i++) {
+    const p = pages[i]; onStep && onStep(i);
+    if (!p.src.lib) p.src.lib = await PDFDocument.load(p.src.bytes, { ignoreEncryption: true });
+    const [cp] = await out.copyPages(p.src.lib, [p.idx]); out.addPage(cp);
+    const tr = totalRot(p); cp.setRotation(degrees(tr));
+    for (const ov of p.overlays) {
+      if (ov.kind === "box") cp.drawRectangle({ x: ov.ox, y: ov.oy, width: ov.w, height: ov.h, rotate: degrees(ov.r), color: rgb(1, 1, 1) });
+      else {
+        const t = await textImage(ov.text, ov.size, ov.color, ov.bold, ov.bg);
+        cp.drawImage(await out.embedPng(t.bytes), { x: ov.ox, y: ov.oy, width: ov.w, height: ov.h, rotate: degrees(ov.r) });
+      }
+    }
+    if (wm) {
+      const mb = cp.getMediaBox(); const fit = Math.min(1, (Math.min(mb.width, mb.height) * 1.05) / wm.w);
+      const w = wm.w * fit, h = wm.h * fit, th = tr + 32;
+      const [ux, uy] = dirVec(th), [vx, vy] = dirVec(th + 90), cx = mb.x + mb.width / 2, cy = mb.y + mb.height / 2;
+      cp.drawImage(wm.img, { x: cx - (ux * w + vx * h) / 2, y: cy - (uy * w + vy * h) / 2, width: w, height: h, rotate: degrees(th), opacity: +$("#wmOp").value / 100 });
+    }
+  }
+  return out.save();
+}
+
+function fixLine(t,rtl){if(!rtl)return t;const o=t.indexOf("("),c=t.indexOf(")");
+ if(c>-1&&(o<0||c<o))t=t.replace(/[()[\]]/g,ch=>({"(":")",")":"(","[":"]","]":"["})[ch]);
+ return t.replace(/\s+([ً-ْٰ])/g,"$1").replace(/(^|\s)([.,:;،؛!?])(\d[\d.,%]*)(?=\s|$)/g,"$1$3$2")}
+async function pageLines(p) {
+  const pg = await p.src.doc.getPage(p.idx + 1);
+  const vp = pg.getViewport({ scale: 1, rotation: totalRot(p) });
+  const tc = await pg.getTextContent();
+  const items = [];
+  for (const it of tc.items) {
+    if (!it.str || !it.str.trim()) continue;
+    const t = pdfjsLib.Util.transform(vp.transform, it.transform);
+    const h = Math.hypot(t[2], t[3]) || Math.abs(it.height) || 10;
+    items.push({ x: t[4], y: t[5], w: it.width * (Math.hypot(t[0], t[1]) / (Math.hypot(it.transform[0], it.transform[1]) || 1)), h, s: it.str.normalize("NFKC") });
+  }
+  items.sort((a, b) => a.y - b.y);
+  const lines = [];
+  for (const it of items) {
+    const ln = lines[lines.length - 1];
+    if (ln && Math.abs(it.y - ln.y) < Math.max(it.h, ln.h) * 0.55) { ln.items.push(it); ln.h = Math.max(ln.h, it.h); }
+    else lines.push({ y: it.y, h: it.h, items: [it] });
+  }
+  return lines.map(ln => {
+    const raw = ln.items.map(i => i.s).join(" "); const rtl = isRtl(raw);
+    const arr = ln.items.sort((a, b) => (rtl ? b.x - a.x : a.x - b.x));
+    let text = "";
+    arr.forEach((it, k) => {
+      if (k) {
+        const pr = arr[k - 1]; const gap = rtl ? pr.x - (it.x + it.w) : it.x - (pr.x + pr.w);
+        if (gap > ln.h * 0.12 && !/\s$/.test(text) && !/^\s/.test(it.s)) text += " ";
+      }
+      text += it.s;
+    });
+    return { text: fixLine(text.replace(/\s+/g, " ").trim(), rtl), rtl, size: ln.h, y: ln.y };
+  });
+}
+
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+function runs(text, rtl, hs) {
+  const rp = r => `<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${r ? "<w:rtl/>" : ""}<w:sz w:val="${hs}"/><w:szCs w:val="${hs}"/></w:rPr>`;
+  if (!rtl) return `<w:r>${rp(false)}<w:t xml:space="preserve">${esc(text)}</w:t></w:r>`;
+  // split Latin chunks out of Arabic lines so Word orders them correctly
+  return text.split(/([A-Za-z][A-Za-z0-9.,:;\/\-_@%&+'()]*(?: [A-Za-z][A-Za-z0-9.,:;\/\-_@%&+'()]*)*)/).filter(Boolean)
+    .map(seg => `<w:r>${rp(!/[A-Za-z]/.test(seg))}<w:t xml:space="preserve">${esc(seg)}</w:t></w:r>`).join("");
+}
+const para = (inner, rtl, extra = "") => `<w:p><w:pPr>${rtl ? "<w:bidi/>" : ""}<w:spacing w:after="80" w:line="276" w:lineRule="auto"/>${extra}</w:pPr>${inner}</w:p>`;
+const pageBreak = `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+
+async function buildDocx(pages, mode, onStep) {
+  const zip = new JSZip(); const body = []; const rels = []; let docRtl = 0, scanned = 0;
+  let rendered = null;
+  if (mode !== "text") { const bytes = await buildPdf(pages); rendered = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise; }
+  for (let i = 0; i < pages.length; i++) {
+    onStep && onStep(i);
+    if (i) body.push(pageBreak);
+    if (rendered) {
+      const pg = await rendered.getPage(i + 1); const vp = pg.getViewport({ scale: 2 });
+      const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height;
+      const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+      await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+      zip.file(`word/media/page${i + 1}.png`, await canvasBlob(c));
+      rels.push(`<Relationship Id="rImg${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/page${i + 1}.png"/>`);
+      const maxW = 9638 * 635, maxH = 14200 * 635, ratio = vp.height / vp.width;
+      let cx = maxW, cy = Math.round(maxW * ratio); if (cy > maxH) { cy = maxH; cx = Math.round(maxH / ratio); }
+      const n = i + 1;
+      body.push(`<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="0"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${n}" name="Page ${n}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${n}" name="page${n}.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rImg${n}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`);
+      if (mode === "both") body.push(pageBreak);
+    }
+    if (mode !== "image") {
+      const lines = await pageLines(pages[i]);
+      if (!lines.length) { scanned++; body.push(para(runs(T(`[الصفحة ${i + 1}: لا يوجد نص قابل للاستخراج — غالباً صفحة ممسوحة ضوئياً]`, `[Page ${i + 1}: no text found — probably a scanned page]`), LANG !== "en", 20), LANG !== "en")); continue; }
+      let prev = null;
+      for (const ln of lines) {
+        if (ln.rtl) docRtl++; else docRtl--;
+        if (prev && ln.y - prev.y > Math.max(prev.size, ln.size) * 2.1) body.push(para("", ln.rtl));
+        const hs = Math.max(16, Math.min(72, Math.round(ln.size * 2)));
+        body.push(para(runs(ln.text, ln.rtl, hs), ln.rtl));
+        prev = ln;
+      }
+    }
+  }
+  if (rendered) rendered.destroy();
+  const sect = `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/>${docRtl >= 0 ? "<w:bidi/>" : ""}</w:sectPr>`;
+  zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`);
+  zip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`);
+  zip.file("word/_rels/document.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels.join("")}</Relationships>`);
+  zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body.join("")}${sect}</w:body></w:document>`);
+  return { blob: await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }), scanned };
+}
+
+let busy = false;
+$$("[data-out]").forEach(b => b.onclick = async () => {
+  if (busy) return;
+  if (!state.pages.length) { toast(T("أضف ملفاً أولاً", "Add a file first")); return; }
+  let pages; try { pages = selectedPages(); } catch (e) { toast(e.message); return; }
+  const kind = b.dataset.out, name = ($("#outName").value.trim() || T("مستند", "document")).replace(/[\\/:*?"<>|]/g, "-");
+  busy = true; $$("[data-out]").forEach(x => (x.disabled = true));
+  const step = label => i => status(`${label} — ${T("صفحة", "page")} ${i + 1} / ${pages.length}`, ((i + 1) / pages.length) * 100);
+  try {
+    if (kind === "pdf") {
+      const bytes = await buildPdf(pages, step(T("تجهيز PDF", "Building PDF")));
+      status(T("جاهز", "Done"), 100); await saveFile(name + ".pdf", new Blob([bytes], { type: "application/pdf" }));
+    } else if (kind === "docx") {
+      const mode = $("input[name=wmode]:checked").value;
+      const { blob, scanned } = await buildDocx(pages, mode, step(T("تحويل إلى Word", "Converting to Word")));
+      status(scanned ? T(`جاهز — ${scanned} صفحة بدون نص (ممسوحة ضوئياً). جرّب «نسخة مطابقة للشكل».`, `Done — ${scanned} page(s) have no text (scanned). Try "Exact look".`) : T("جاهز", "Done"), 100);
+      await saveFile(name + ".docx", blob);
+    } else if (kind === "txt") {
+      const parts = [];
+      for (let i = 0; i < pages.length; i++) { step(T("استخراج النص", "Extracting text"))(i); const ls = await pageLines(pages[i]); parts.push(`—— ${T("صفحة", "Page")} ${i + 1} ——\n` + (ls.length ? ls.map(l => l.text).join("\n") : T("[لا يوجد نص]", "[no text]"))); }
+      status(T("جاهز", "Done"), 100); await saveFile(name + ".txt", "﻿" + parts.join("\n\n"));
+    } else if (kind === "png") {
+      const bytes = await buildPdf(pages); const doc = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
+      const zip = new JSZip(); let single = null;
+      for (let i = 0; i < doc.numPages; i++) {
+        step(T("تحويل إلى صور", "Rendering images"))(i);
+        const pg = await doc.getPage(i + 1); const vp = pg.getViewport({ scale: 2.5 });
+        const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height;
+        const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+        await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+        const blob = await canvasBlob(c); single = blob; zip.file(`${name}-${String(i + 1).padStart(2, "0")}.png`, blob);
+      }
+      doc.destroy(); status(T("جاهز", "Done"), 100);
+      if (pages.length === 1) await saveFile(name + ".png", single);
+      else await saveFile(name + T("-صور.zip", "-images.zip"), await zip.generateAsync({ type: "blob" }));
+    }
+  } catch (e) { console.error(e); status(T("حدث خطأ: ", "Error: ") + (e.message || e)); toast(T("تعذّر إكمال التحويل", "Could not finish the conversion")); }
+  finally { busy = false; $$("[data-out]").forEach(x => (x.disabled = false)); }
+});
+
+/* ---------- inputs ---------- */
+$("#pick").addEventListener("change", e => addFiles(e.target.files));
+$("#clearAll").onclick = clearAll;
+const drop = $("#drop");
+["dragenter", "dragover"].forEach(ev => document.addEventListener(ev, e => { if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) { e.preventDefault(); drop.classList.add("over"); } }));
+["dragleave", "drop"].forEach(ev => document.addEventListener(ev, e => { if (ev === "dragleave" && e.relatedTarget) return; drop.classList.remove("over"); }));
+document.addEventListener("drop", e => { if (e.dataTransfer && e.dataTransfer.files.length) { e.preventDefault(); addFiles(e.dataTransfer.files); } });
+let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => state.tab === "edit" && renderEditor(), 200); });
+
+/* ---------- sample document so the bench opens in a working state ---------- */
+async function sample() {
+  const d = await PDFDocument.create(); const f = await d.embedFont(StandardFonts.Helvetica), fb = await d.embedFont(StandardFonts.HelveticaBold);
+  const titles = ["Compliance Monitoring Report — Q3", "Annex A — AML/CTF Screening Summary", "Annex B — Fraud Incident Log"];
+  for (let i = 0; i < 3; i++) {
+    const pg = d.addPage([595, 842]);
+    pg.drawRectangle({ x: 0, y: 792, width: 595, height: 50, color: rgb(0.05, 0.42, 0.35) });
+    pg.drawText("SAMPLE FILE — replace with your own PDF", { x: 40, y: 812, size: 11, font: fb, color: rgb(1, 1, 1) });
+    pg.drawText(titles[i], { x: 40, y: 740, size: 20, font: fb, color: rgb(0.1, 0.13, 0.12) });
+    const body = ["This sample shows how the workshop handles a document.", "Reorder, rotate or delete pages, write on them, then", "export to Word, images, text or a cleaned-up PDF.", "", "Item            Status        Owner", "Policy review   Complete      Compliance", "KYC refresh     In progress   Operations", "STR filings     2 this month  MLRO"];
+    body.forEach((l, k) => pg.drawText(l, { x: 40, y: 700 - k * 20, size: 12, font: k >= 4 ? f : f, color: rgb(0.2, 0.24, 0.23) }));
+    pg.drawText(`Page ${i + 1} of 3`, { x: 270, y: 30, size: 9, font: f, color: rgb(0.45, 0.5, 0.48) });
+  }
+  await addSource(T("ملف-تجريبي.pdf", "sample.pdf"), await d.save(), "sample");
+  const p = state.pages[0];
+  if (p) { const ov = { id: ++uid, kind: "text", text: T("تمت المراجعة ✓", "Reviewed ✓"), size: 16, color: COLORS[1], bold: true, bg: false, r: 0, ox: 420, oy: 762 }; measure(ov); p.overlays.push(ov); }
+  renderAll();
+}
+$("#langBtn").onclick = () => { LANG = LANG === "ar" ? "en" : "ar"; applyLang(); renderAll(); };
+applyLang();
+document.fonts.ready.then(sample);
+renderAll();
+})();
+</script>
+
+</body>
+</html>

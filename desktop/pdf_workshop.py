@@ -415,7 +415,8 @@ OPS = {
 # ---------------------------------------------------------------- server
 
 TOKEN = secrets.token_urlsafe(24)
-VENDOR = Path(__file__).resolve().parent / "vendor"
+_HERE = Path(__file__).resolve().parent
+VENDOR = next((d for d in (_HERE / "vendor", _HERE.parent / "vendor") if d.is_dir()), _HERE / "vendor")
 STATE = {"last_ping": time.time(), "port": 0}
 
 
