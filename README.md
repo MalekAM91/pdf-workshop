@@ -13,6 +13,7 @@ Open the link on any device (Windows, Mac, iPhone, Android) and start working. T
 | English | العربي |
 |---|---|
 | PDF → Word (editable, Arabic and English) | PDF ← Word (نص قابل للتعديل، عربي وإنجليزي) |
+| OCR for scanned PDFs (Arabic and English) | قراءة ضوئية OCR للملفات الممسوحة (عربي وإنجليزي) |
 | PDF → images (PNG) · PDF → text | PDF ← صور · PDF ← نص |
 | Images → PDF | صور ← PDF |
 | Merge files, reorder, rotate, delete pages | دمج ملفات، ترتيب، تدوير، حذف صفحات |
@@ -32,9 +33,9 @@ Open the link on any device (Windows, Mac, iPhone, Android) and start working. T
 
 ### Limits / حدود
 
-Scanned PDFs (photos of paper) have no text to extract, so they convert to Word as page images only.
+OCR is very good on clear scans but can misread a letter on blurry or skewed pages, so check important figures.
 
-الملفات الممسوحة بالسكانر (صور ورق) ما فيها نص، فتتحول لـ Word كصور بس.
+القراءة الضوئية دقيقة في المسح الواضح، لكن ممكن تغلط في حرف إذا الصفحة مائلة أو غير واضحة، فراجع الأرقام المهمة.
 
 ---
 
@@ -61,5 +62,6 @@ The `desktop/` folder has a Python version with extra tools: password protect an
 **Web libraries / مكتبات الموقع:**
 
 - pdf.js (Apache-2.0)
+- tesseract.js and its Arabic and English data (Apache-2.0)
 - pdf-lib (MIT)
 - JSZip (MIT)

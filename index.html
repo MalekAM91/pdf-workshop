@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
-<meta name="description" content="Private PDF tool in your browser: PDF to Word, text and images, merge, reorder, write on pages, watermark. Files never leave your device.">
+<meta name="description" content="Private PDF tool in your browser: PDF to Word with OCR, text and images, merge, reorder, write on pages, watermark. Files never leave your device.">
 <title>ورشة PDF الخاصة</title>
 <style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
 </head>
@@ -218,6 +218,7 @@ label{font-size:.85rem;color:var(--muted)}
           <label><input type="radio" name="wmode" value="image"> <span data-i18n="wImg">نسخة مطابقة للشكل (صور)</span></label>
           <label><input type="radio" name="wmode" value="both"> <span data-i18n="wBoth">الاثنين معاً</span></label>
         </div>
+        <label class="row" id="ocrRow" hidden style="color:var(--ink);font-size:.86rem"><input type="checkbox" id="ocrOn" checked> <span data-i18n="ocrOn">قراءة ضوئية للصفحات الممسوحة (OCR)</span></label>
       </section>
       <section>
         <h3 data-i18n="wmH">علامة مائية</h3>
@@ -241,6 +242,7 @@ label{font-size:.85rem;color:var(--muted)}
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
 <script src="vendor/jszip.min.js"></script>
+<script src="vendor/ocr/tesseract.min.js"></script>
 <script>
 (() => {
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("vendor/pdf.worker.min.js", location.href).href;
@@ -278,6 +280,8 @@ const I18N = {
   privH: ["الخصوصية", "Privacy"], priv1: ["كل المعالجة داخل المتصفح، ولا يوجد خادم يستقبل الملفات.", "Everything runs in your browser. No server receives your files."],
   priv2: ["لا يُحفظ شيء في المتصفح؛ إغلاق الصفحة أو «مسح كل شيء» يمحو الملفات من الذاكرة.", "Nothing is saved. Closing the page or Clear all wipes the files from memory."],
   priv3: ["الملفات الممسوحة ضوئياً (صور بدون نص) تتحول لـ Word كصور فقط.", "Scanned PDFs (images without text) convert to Word as images only."],
+  priv3ocr: ["الصفحات الممسوحة ضوئياً تُقرأ بالـ OCR داخل جهازك، بالعربي والإنجليزي.", "Scanned pages are read with OCR on your device, in Arabic and English."],
+  ocrOn: ["قراءة ضوئية للصفحات الممسوحة (OCR)", "Read scanned pages with OCR"],
 };
 const DEFAULTS = { outName: ["مستند", "document"], wmText: ["سري — للاستخدام الداخلي", "CONFIDENTIAL — INTERNAL USE"] };
 function applyLang() {
@@ -289,6 +293,7 @@ function applyLang() {
   for (const id in DEFAULTS) { const e = $("#" + id); if (DEFAULTS[id].includes(e.value)) e.value = DEFAULTS[id][k]; }
   $("#prevPg").textContent = LANG === "en" ? "←" : "→"; $("#nextPg").textContent = LANG === "en" ? "→" : "←";
   $("#langBtn").textContent = LANG === "en" ? "عربي" : "English"; $("#langBtn").lang = LANG === "en" ? "ar" : "en";
+  if (OCR_OK) $('[data-i18n="priv3"]').textContent = I18N.priv3ocr[k];
   document.title = I18N.title[k];
 }
 
@@ -662,6 +667,46 @@ async function buildPdf(pages, onStep) {
 function fixLine(t,rtl){if(!rtl)return t;const o=t.indexOf("("),c=t.indexOf(")");
  if(c>-1&&(o<0||c<o))t=t.replace(/[()[\]]/g,ch=>({"(":")",")":"(","[":"]","]":"["})[ch]);
  return t.replace(/\s+([ً-ْٰ])/g,"$1").replace(/(^|\s)([.,:;،؛!?])(\d[\d.,%]*)(?=\s|$)/g,"$1$3$2")}
+/* ---------- OCR for scanned pages (only where tesseract.js is bundled) ---------- */
+const OCR_OK = typeof window.Tesseract !== "undefined";
+let ocrWorker = null, ocrProgress = null;
+function getOcr() {
+  if (!ocrWorker) {
+    const abs = u => new URL(u, location.href).href;
+    ocrWorker = Tesseract.createWorker(["ara", "eng"], 1, {
+      workerPath: abs("vendor/ocr/worker.min.js"), corePath: abs("vendor/ocr/"), langPath: abs("vendor/ocr/lang"),
+      gzip: true, workerBlobURL: false, cacheMethod: "none", // nothing is kept in the browser
+      logger: m => ocrProgress && ocrProgress(m),
+    }).catch(e => { ocrWorker = null; throw e; });
+  }
+  return ocrWorker;
+}
+async function ocrLines(p, onProgress) {
+  ocrProgress = onProgress;
+  const w = await getOcr();
+  const pg = await p.src.doc.getPage(p.idx + 1);
+  const base = pg.getViewport({ scale: 1, rotation: totalRot(p) });
+  const scale = Math.min(3, 2200 / Math.max(base.width, base.height));
+  const vp = pg.getViewport({ scale, rotation: totalRot(p) });
+  const c = document.createElement("canvas"); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+  const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+  await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+  const { data } = await w.recognize(c);
+  return (data.lines || []).map(l => {
+    const text = l.text.normalize("NFKC").replace(/[\u200e\u200f\u202a-\u202e]/g, "").replace(/\s+/g, " ").trim();
+    return { text, rtl: isRtl(text), size: Math.max(8, Math.min(36, ((l.bbox.y1 - l.bbox.y0) / scale) * 0.75)), y: l.bbox.y0 / scale };
+  }).filter(l => l.text && /[\p{L}\p{N}]/u.test(l.text));
+}
+// text lines of a page; scanned pages fall back to OCR when it is available and switched on
+async function readLines(p, useOcr, label) {
+  const lines = await pageLines(p);
+  if (lines.length || !useOcr || !OCR_OK) return lines;
+  return ocrLines(p, m => {
+    if (m.status === "recognizing text") status(`${label} — ${T("قراءة ضوئية", "OCR")} ${Math.round(m.progress * 100)}%`, m.progress * 100);
+    else if (/load|initializ/.test(m.status)) status(`${label} — ${T("تجهيز القراءة الضوئية…", "Preparing OCR…")}`, 5);
+  });
+}
+
 async function pageLines(p) {
   const pg = await p.src.doc.getPage(p.idx + 1);
   const vp = pg.getViewport({ scale: 1, rotation: totalRot(p) });
@@ -706,7 +751,7 @@ function runs(text, rtl, hs) {
 const para = (inner, rtl, extra = "") => `<w:p><w:pPr>${rtl ? "<w:bidi/>" : ""}<w:spacing w:after="80" w:line="276" w:lineRule="auto"/>${extra}</w:pPr>${inner}</w:p>`;
 const pageBreak = `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
 
-async function buildDocx(pages, mode, onStep) {
+async function buildDocx(pages, mode, onStep, useOcr) {
   const zip = new JSZip(); const body = []; const rels = []; let docRtl = 0, scanned = 0;
   let rendered = null;
   if (mode !== "text") { const bytes = await buildPdf(pages); rendered = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise; }
@@ -727,7 +772,7 @@ async function buildDocx(pages, mode, onStep) {
       if (mode === "both") body.push(pageBreak);
     }
     if (mode !== "image") {
-      const lines = await pageLines(pages[i]);
+      const lines = await readLines(pages[i], useOcr, `${T("صفحة", "Page")} ${i + 1}/${pages.length}`);
       if (!lines.length) { scanned++; body.push(para(runs(T(`[الصفحة ${i + 1}: لا يوجد نص قابل للاستخراج — غالباً صفحة ممسوحة ضوئياً]`, `[Page ${i + 1}: no text found — probably a scanned page]`), LANG !== "en", 20), LANG !== "en")); continue; }
       let prev = null;
       for (const ln of lines) {
@@ -762,12 +807,12 @@ $$("[data-out]").forEach(b => b.onclick = async () => {
       status(T("جاهز", "Done"), 100); await saveFile(name + ".pdf", new Blob([bytes], { type: "application/pdf" }));
     } else if (kind === "docx") {
       const mode = $("input[name=wmode]:checked").value;
-      const { blob, scanned } = await buildDocx(pages, mode, step(T("تحويل إلى Word", "Converting to Word")));
+      const { blob, scanned } = await buildDocx(pages, mode, step(T("تحويل إلى Word", "Converting to Word")), $("#ocrOn").checked);
       status(scanned ? T(`جاهز — ${scanned} صفحة بدون نص (ممسوحة ضوئياً). جرّب «نسخة مطابقة للشكل».`, `Done — ${scanned} page(s) have no text (scanned). Try "Exact look".`) : T("جاهز", "Done"), 100);
       await saveFile(name + ".docx", blob);
     } else if (kind === "txt") {
       const parts = [];
-      for (let i = 0; i < pages.length; i++) { step(T("استخراج النص", "Extracting text"))(i); const ls = await pageLines(pages[i]); parts.push(`—— ${T("صفحة", "Page")} ${i + 1} ——\n` + (ls.length ? ls.map(l => l.text).join("\n") : T("[لا يوجد نص]", "[no text]"))); }
+      for (let i = 0; i < pages.length; i++) { step(T("استخراج النص", "Extracting text"))(i); const ls = await readLines(pages[i], $("#ocrOn").checked, `${T("صفحة", "Page")} ${i + 1}/${pages.length}`); parts.push(`—— ${T("صفحة", "Page")} ${i + 1} ——\n` + (ls.length ? ls.map(l => l.text).join("\n") : T("[لا يوجد نص]", "[no text]"))); }
       status(T("جاهز", "Done"), 100); await saveFile(name + ".txt", "﻿" + parts.join("\n\n"));
     } else if (kind === "png") {
       const bytes = await buildPdf(pages); const doc = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
@@ -817,11 +862,13 @@ async function sample() {
 }
 $("#quickWord").onclick = () => {
   const range = $("#range"), saved = range.value, radio = $("input[name=wmode]:checked");
-  range.value = ""; $("input[name=wmode][value=text]").checked = true;
+  const ocr = $("#ocrOn"), ocrWas = ocr.checked;
+  range.value = ""; $("input[name=wmode][value=text]").checked = true; ocr.checked = true;
   $('[data-out="docx"]').click(); // the export handler reads both settings before its first await
-  range.value = saved; radio.checked = true;
+  range.value = saved; radio.checked = true; ocr.checked = ocrWas;
 };
 $("#langBtn").onclick = () => { LANG = LANG === "ar" ? "en" : "ar"; applyLang(); renderAll(); };
+$("#ocrRow").hidden = !OCR_OK;
 applyLang();
 document.fonts.ready.then(sample);
 renderAll();
