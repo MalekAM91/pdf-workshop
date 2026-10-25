@@ -225,7 +225,10 @@ label{font-size:.85rem;color:var(--muted)}
           <label><input type="radio" name="wmode" value="image"> <span data-i18n="wImg">نسخة مطابقة للشكل (صور)</span></label>
           <label><input type="radio" name="wmode" value="both"> <span data-i18n="wBoth">الاثنين معاً</span></label>
         </div>
-        <label class="row" id="ocrRow" hidden style="color:var(--ink);font-size:.86rem"><input type="checkbox" id="ocrOn" checked> <span data-i18n="ocrOn">قراءة ضوئية للصفحات الممسوحة (OCR)</span></label>
+        <div id="ocrRow" hidden style="display:flex;flex-direction:column;gap:4px">
+          <label class="row" style="color:var(--ink);font-size:.86rem"><input type="checkbox" id="ocrOn" checked> <span data-i18n="ocrOn">قراءة ضوئية للصفحات الممسوحة (OCR)</span></label>
+          <label class="row" style="color:var(--ink);font-size:.86rem"><input type="checkbox" id="ocrAll"> <span data-i18n="ocrAll">قراءة ضوئية لكل الصفحات (إذا طلع النص ملخبط)</span></label>
+        </div>
       </section>
       <section>
         <h3 data-i18n="wmH">علامة مائية</h3>
@@ -298,6 +301,7 @@ const I18N = {
   priv3: ["الملفات الممسوحة ضوئياً (صور بدون نص) تتحول لـ Word كصور فقط.", "Scanned PDFs (images without text) convert to Word as images only."],
   priv3ocr: ["الصفحات الممسوحة ضوئياً تُقرأ بالـ OCR داخل جهازك، بالعربي والإنجليزي.", "Scanned pages are read with OCR on your device, in Arabic and English."],
   ocrOn: ["قراءة ضوئية للصفحات الممسوحة (OCR)", "Read scanned pages with OCR"],
+  ocrAll: ["قراءة ضوئية لكل الصفحات (إذا طلع النص ملخبط)", "OCR every page (if the text comes out scrambled)"],
 };
 const DEFAULTS = { outName: ["مستند", "document"], wmText: ["سري — للاستخدام الداخلي", "CONFIDENTIAL — INTERNAL USE"] };
 function applyLang() {
@@ -720,8 +724,11 @@ function visualToLogical(t) {
 function looksBroken(text) {
   const ar = (text.match(AR_G) || []).length; if (ar < 20) return false;
   const bad = (text.match(/[ƀ-ɏ-\uFFFD]/g) || []).length;
-  const toks = text.split(/\s+/).filter(w => AR.test(w)), single = toks.filter(w => [...w].length === 1).length;
-  return (bad >= 3 && bad / ar > 0.01) || (toks.length >= 10 && single / toks.length > 0.35);
+  const toks = text.split(/\s+/).filter(w => AR.test(w));
+  // letters that fell out of their words ("ش كة", "التأمي … ي"): fonts that draw some letters as separate
+  // shapes and dots. Normal Arabic almost never has a lone letter other than "و".
+  const loose = toks.filter(w => (w.match(AR_G) || []).length === 1 && w !== "و" && !/[()[\].]/.test(w)).length;
+  return (bad >= 3 && bad / ar > 0.01) || (loose >= 4 && loose / toks.length >= 0.05);
 }
 
 async function pageLines(p) {
@@ -767,6 +774,8 @@ async function pageLines(p) {
 
 /* ---------- OCR for scanned pages (only where tesseract.js is bundled) ---------- */
 const OCR_OK = typeof window.Tesseract !== "undefined";
+const AR_LETTER = /[\u0621-\u064A\u066E-\u06D3\u06FA-\u06FF]/;
+const OCR_CFG = Object.assign({ pxList: [1800, 2400], arReread: true, bonus: 10, punctSkip: true }, window.__ocrCfg || {});
 let ocrWorkers = {}, ocrProgress = null;
 function getOcr(langs) {
   if (!ocrWorkers[langs]) {
@@ -785,18 +794,30 @@ async function ocrLines(p, onProgress) {
   const w = await getOcr("ara+eng");
   const pg = await p.src.doc.getPage(p.idx + 1);
   const base = pg.getViewport({ scale: 1, rotation: totalRot(p) });
-  const scale = Math.min(3, 2200 / Math.max(base.width, base.height));
-  const vp = pg.getViewport({ scale, rotation: totalRot(p) });
-  const c = document.createElement("canvas"); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
-  const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
-  await pg.render({ canvasContext: ctx, viewport: vp }).promise;
-  const { data } = await w.recognize(c);
+  // the best resolution depends on the font size, so read the page at each size and keep the reading
+  // Tesseract is most confident about
+  let best = null;
+  for (const px of OCR_CFG.pxList) {
+    const sc = Math.min(4, px / Math.max(base.width, base.height));
+    const vp = pg.getViewport({ scale: sc, rotation: totalRot(p) });
+    const cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+    const cx = cv.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, cv.width, cv.height);
+    await pg.render({ canvasContext: cx, viewport: vp }).promise;
+    const d = (await w.recognize(cv)).data;
+    if (!best || d.confidence > best.data.confidence) best = { data: d, c: cv, scale: sc };
+  }
+  const { data, c, scale } = best;
   // The mixed model sometimes reads an Arabic word as English ("Lay" for "بما") or "%" as "96".
   // Re-read each doubtful word with the single-language models and keep the more confident reading.
   const doubtful = [];
-  for (const line of data.lines) for (const wd of line.words) {
-    wd.t = CLEAN(wd.text).trim();
-    if (AR.test(wd.t) ? wd.confidence < 65 : /[\p{L}\p{N}%]/u.test(wd.t)) {
+  for (const line of data.lines) {
+    const lineRtl = isRtl(line.text);
+    for (const wd of line.words) {
+    wd.t = CLEAN(wd.text).trim(); wd.inRtl = lineRtl;
+    // re-read non-Arabic guesses, and Arabic words the model was unsure of (never bare punctuation)
+    const arWord = AR_LETTER.test(wd.t), punctOnly = !/[\p{L}\p{N}%]/u.test(wd.t);
+    if (OCR_CFG.punctSkip && punctOnly) continue;
+    if (arWord ? OCR_CFG.arReread && wd.confidence < 65 : !punctOnly || !OCR_CFG.punctSkip) {
       // numbers and Latin words: widen the crop to the neighbouring words, since the box often
       // covers only part of the number ("0" for "120")
       if (/^[\d٠-٩.,%()]+$/.test(wd.t)) {
@@ -807,26 +828,45 @@ async function ocrLines(p, onProgress) {
       }
       doubtful.push(wd);
     }
+    }
   }
   if (doubtful.length) {
     onProgress && onProgress({ status: "checking words", progress: 0.95 });
     const [ara, eng] = await Promise.all([getOcr("ara"), getOcr("eng")]);
     for (const wd of doubtful.slice(0, 120)) {
-      const cut = b => {
-        const pad = 4, k = document.createElement("canvas");
+      const cut = (b, pad = 4) => {
+        const k = document.createElement("canvas");
         k.width = b.x1 - b.x0 + 2 * pad; k.height = b.y1 - b.y0 + 2 * pad;
         const cx = k.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, k.width, k.height);
         cx.drawImage(c, b.x0 - pad, b.y0 - pad, k.width, k.height, 0, 0, k.width, k.height);
         return k;
       };
       const read = async (m, k) => { const r = (await m.recognize(k)).data; return { t: CLEAN(r.text).replace(/\s+/g, " ").trim(), c: r.confidence }; };
-      const crop = cut(wd.bbox), isAr = AR.test(wd.t);
+      // two margins around the word: Tesseract is sensitive to how much white space it gets
+      const wideCrop = cut(wd.bbox, Math.max(6, Math.round((wd.bbox.y1 - wd.bbox.y0) * 0.22)));
+      const crop = cut(wd.bbox), isAr = AR_LETTER.test(wd.t);
       let best = isAr ? { t: wd.t, c: wd.confidence } : null;
+      const reads = [];
       for (const m of isAr ? [ara] : [eng, ara]) {
-        const r = await read(m, crop);
-        if (isAr) r.t = r.t.split(" ").filter(x => AR.test(x)).join(" "); // a tight crop can clip a neighbour's digit
-        if (r.t && (!best || r.c > best.c)) best = r;
+        const r1 = await read(m, crop), r2 = await read(m, wideCrop), r = r2.c > r1.c ? r2 : r1;
+        // one word in, one word out: drop stray punctuation pieces and keep the main piece
+        const raw = r.t;
+        let parts = r.t.split(" ").filter(x => /[\p{L}\p{N}%]/u.test(x));
+        if (isAr || (m === ara && wd.inRtl)) { const a = parts.filter(x => AR_LETTER.test(x)); if (a.length) parts = a; }
+        r.t = parts.sort((a, b) => b.length - a.length)[0] || "";
+        r.t = r.t.replace(/([\u064B-\u0652])\1+/g, "$1"); // "نظاماًً" -> "نظاماً"
+        const tail = r.t && raw.slice(raw.indexOf(r.t) + r.t.length).match(/^\s*([،,.؛;:])/); // keep "يوماً ،"
+        if (tail && !/[،,.؛;:]$/.test(r.t)) r.t += tail[1];
+        // inside an Arabic line an Arabic reading wins unless the English one is clearly more confident
+        const bonus = m === ara && wd.inRtl && AR_LETTER.test(r.t) ? OCR_CFG.bonus : 0;
+        if (r.t) reads.push({ t: r.t, c: r.c, m });
+        if (r.t && (!best || r.c + bonus > best.c)) best = { t: r.t, c: r.c + bonus };
       }
+      // in an Arabic line a lowercase English guess ("log", "Tolls") is a misread Arabic word unless it is
+      // an acronym (SAMA, PEPs, KYC), has digits, or the English model is very sure
+      const en = reads.find(x => x.m === eng), ar = reads.find(x => x.m === ara);
+      if (wd.inRtl && en && ar && (ar.t.match(/[\u0621-\u064A]/g) || []).length >= 2 && best && best.t === en.t
+        && !/[A-Z]{2,}|\d/.test(en.t) && en.c < 90) best = ar;
       // a number whose box was too narrow: read the gap up to the neighbouring words with the English
       // model, and keep it only if it is a clean, longer number
       if (wd.crop && best && /^[\d.,%()]+$/.test(best.t)) {
@@ -847,6 +887,15 @@ async function ocrLines(p, onProgress) {
     let words = l.words.filter(w => w.t && !/^[|_\-–—.]+$/.test(w.t) && !border(w) && !(NUM.test(w.t) && wide.some(o => o !== w && (w.bbox.x0 + w.bbox.x1) / 2 >= o.absorbs.x0 && (w.bbox.x0 + w.bbox.x1) / 2 <= o.absorbs.x1)));
     if (!words.length) return null;
     const rtl = isRtl(words.map(w => w.t).join(" "));
+    if (rtl) {
+      const byX = words.slice().sort((a, b) => b.bbox.x1 - a.bbox.x1), out = [];
+      for (let i = 0; i < byX.length;) {
+        if (AR_LETTER.test(byX[i].t)) { out.push(byX[i++]); continue; }
+        const run = []; while (i < byX.length && !AR_LETTER.test(byX[i].t)) run.push(byX[i++]);
+        out.push(...run.reverse());
+      }
+      words = out;
+    }
     const rh = l.rowAttributes && l.rowAttributes.row_height > 0 ? l.rowAttributes.row_height : l.bbox.y1 - l.bbox.y0;
     // a number split into touching pieces ("00%" + "1") is one left-to-right number
     words = words.reduce((acc, w) => {
@@ -867,14 +916,24 @@ async function ocrLines(p, onProgress) {
     text = text.split("\t").map(cell => fixLine(cell.trim(), rtl)).filter(Boolean).join("\t");
     const base = l.baseline && l.baseline.y0 ? l.baseline.y0 : l.bbox.y1;
     return { text, rtl, size: Math.max(8, Math.min(36, (rh / scale) * 0.72)), y: base / scale, x0: l.bbox.x0 / scale, x1: l.bbox.x1 / scale };
-  }).filter(l => l && /[\p{L}\p{N}]/u.test(l.text));
+  }).filter(l => l && /[\p{L}\p{N}]/u.test(l.text)).map((l, _, all) => {
+    // OCR line heights swing with the letters on the line (tall alefs, low ya); snap lines near the
+    // typical size to it so paragraphs are recognised, and keep clearly bigger lines as headings
+    const sz = all.map(x => x.size).sort((a, b) => a - b), med = sz[sz.length >> 1];
+    return Math.abs(l.size - med) <= med * 0.35 ? { ...l, size: med } : l;
+  });
 }
 
 // lines of one page; scanned pages and pages whose stored text is corrupt are read with OCR when possible
 async function readLines(p, useOcr, label) {
   const lines = await pageLines(p);
   const broken = lines.length > 0 && looksBroken(lines.map(l => l.text).join(" "));
-  if ((lines.length && !broken) || !useOcr || !OCR_OK) return { lines, ocr: false, broken };
+  const force = OCR_OK && $("#ocrAll").checked;
+  if (broken && !OCR_OK && !readLines.warned) { // this copy has no OCR engine (the private Claude page)
+    readLines.warned = true;
+    toast(T("النص المحفوظ داخل هذا الملف تالف. للحصول على نص سليم افتح الأداة من الرابط العام: malekam91.github.io/pdf-workshop", "The text stored in this file is corrupt. For clean text, open the tool from the public link: malekam91.github.io/pdf-workshop"));
+  }
+  if (!force && ((lines.length && !broken) || !useOcr || !OCR_OK)) return { lines, ocr: false, broken };
   const ocr = await ocrLines(p, m => {
     if (m.status === "recognizing text") status(`${label} — ${T("قراءة ضوئية", "OCR")} ${Math.round(m.progress * 100)}%`, m.progress * 100);
     else if (m.status === "checking words") status(`${label} — ${T("تدقيق الكلمات…", "Checking words…")}`, 95);
@@ -889,6 +948,11 @@ function toBlocks(lines) {
   const plain = lines.filter(l => !l.text.includes("\t"));
   const sizes = (plain.length ? plain : lines).map(l => l.size).sort((a, b) => a - b), body = sizes[sizes.length >> 1];
   const bodyW = Math.max(1, ...plain.filter(l => Math.abs(l.size - body) <= body * 0.25).map(l => l.x1 - l.x0));
+  // typical distance between consecutive body lines (1, 1.5 or double spacing)
+  const steps = [];
+  for (let i = 1; i < plain.length; i++) { const d = plain[i].y - plain[i - 1].y; if (d > 0 && Math.abs(plain[i].size - body) <= body * 0.25) steps.push(d); }
+  steps.sort((a, b) => a - b);
+  const step = steps.length >= 4 ? steps[Math.floor(steps.length * 0.25)] : 0; // within-paragraph spacing, not the gaps between paragraphs
   const blocks = []; let prev = null;
   for (const ln of lines) {
     const cells = ln.text.split("\t"), last = blocks[blocks.length - 1], gap = prev ? ln.y - prev.y : 1e9;
@@ -901,8 +965,9 @@ function toBlocks(lines) {
       else blocks.push({ type: "h", text: ln.text, rtl: ln.rtl });
     } else {
       const joins = last && last.type === "p" && last.rtl === ln.rtl && prev && !prev.text.includes("\t")
-        && Math.abs(prev.size - ln.size) <= lh * 0.25 && gap <= lh * 1.9
+        && Math.abs(prev.size - ln.size) <= lh * 0.25 && gap <= (step ? Math.max(step * 1.3, lh * 1.2) : lh * 1.9)
         && prev.x1 - prev.x0 >= bodyW * 0.72 && !/[:：]$/.test(prev.text)
+        && !(/[.؟!]$/.test(prev.text) && prev.x1 - prev.x0 < bodyW * 0.92) // short line ending a sentence ends the paragraph
         && !/^\s*([•▪◦·\-–*]|\(?[\d٠-٩]{1,3}\s*[.)\-–]|\(?[أ-ي]\s*[)\-–])/.test(ln.text);
       if (joins) last.text += /[A-Za-z]-$/.test(last.text) ? ln.text : " " + ln.text; // "high-" + "risk"
       else blocks.push({ type: "p", text: ln.text, rtl: ln.rtl });
