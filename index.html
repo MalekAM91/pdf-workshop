@@ -245,7 +245,7 @@ label{font-size:.85rem;color:var(--muted)}
         <ul class="notes">
           <li data-i18n="priv1">كل المعالجة داخل المتصفح، ولا يوجد خادم يستقبل الملفات.</li>
           <li data-i18n="priv2">لا يُحفظ شيء في المتصفح؛ إغلاق الصفحة أو «مسح كل شيء» يمحو الملفات من الذاكرة.</li>
-          <li class="ver" id="verLine">v2026.10.25-5</li>
+          <li class="ver" id="verLine">v2026.10.25-6</li>
           <li data-i18n="priv3">الملفات الممسوحة ضوئياً (صور بدون نص) تتحول لـ Word كصور فقط.</li>
         </ul>
       </section>
@@ -397,6 +397,7 @@ async function addFiles(files) {
   }
   status("");
   renderAll();
+  prefetchOcr();
 }
 
 function removeSource(id, silent) {
@@ -410,6 +411,7 @@ function removeSource(id, silent) {
 
 function clearAll() {
   state.sources.forEach(s => { s.doc.destroy(); s.bytes = null; s.lib = null; });
+  bgRun++; // stop any background reading
   state.sources = []; state.pages = []; state.cur = 0; state.sel = null;
   $("#pick").value = ""; $("#range").value = ""; $("#outName").value = T("مستند", "document");
   status(""); renderAll(); toast(T("تم مسح كل الملفات من الذاكرة", "All files cleared from memory"));
@@ -741,6 +743,13 @@ function looksBroken(text) {
 }
 
 async function pageLines(p) {
+  const key = totalRot(p);
+  if (p.linesCache && p.linesCache.key === key) return p.linesCache.lines;
+  const lines = await pageLinesRaw(p);
+  p.linesCache = { key, lines };
+  return lines;
+}
+async function pageLinesRaw(p) {
   const pg = await p.src.doc.getPage(p.idx + 1);
   const vp = pg.getViewport({ scale: 1, rotation: totalRot(p) });
   const tc = await pg.getTextContent();
@@ -784,7 +793,7 @@ async function pageLines(p) {
 /* ---------- OCR for scanned pages (only where tesseract.js is bundled) ---------- */
 const OCR_OK = typeof window.Tesseract !== "undefined";
 const AR_LETTER = /[\u0621-\u064A\u066E-\u06D3\u06FA-\u06FF]/;
-const OCR_CFG = Object.assign({ pxList: [1800, 2400], arReread: true, bonus: 10, punctSkip: true }, window.__ocrCfg || {});
+const OCR_CFG = Object.assign({ pxList: [1800, 2400], secondIf: 85, marginIf: 70, arReread: true, bonus: 10, punctSkip: true }, window.__ocrCfg || {});
 let ocrWorkers = {}, ocrProgress = null;
 function getOcr(langs) {
   if (!ocrWorkers[langs]) {
@@ -814,6 +823,7 @@ async function ocrLines(p, onProgress) {
     await pg.render({ canvasContext: cx, viewport: vp }).promise;
     const d = (await w.recognize(cv)).data;
     if (!best || d.confidence > best.data.confidence) best = { data: d, c: cv, scale: sc };
+    if (best.data.confidence >= OCR_CFG.secondIf) break; // good enough: skip the slower second pass
   }
   const { data, c, scale } = best;
   // The mixed model sometimes reads an Arabic word as English ("Lay" for "بما") or "%" as "96".
@@ -857,7 +867,8 @@ async function ocrLines(p, onProgress) {
       let best = isAr ? { t: wd.t, c: wd.confidence } : null;
       const reads = [];
       for (const m of isAr ? [ara] : [eng, ara]) {
-        const r1 = await read(m, crop), r2 = await read(m, wideCrop), r = r2.c > r1.c ? r2 : r1;
+        const r1 = await read(m, crop);
+        const r2 = r1.c >= OCR_CFG.marginIf ? r1 : await read(m, wideCrop), r = r2.c > r1.c ? r2 : r1;
         // one word in, one word out: drop stray punctuation pieces and keep the main piece
         const raw = r.t;
         let parts = r.t.split(" ").filter(x => /[\p{L}\p{N}%]/u.test(x));
@@ -933,6 +944,45 @@ async function ocrLines(p, onProgress) {
   });
 }
 
+// one OCR run per page (and rotation), shared by the background reader and the export buttons
+function ocrCached(p, onProgress) {
+  const key = totalRot(p);
+  if (!p.ocrCache || p.ocrCache.key !== key) p.ocrCache = { key, run: ocrLines(p, m => (p.ocrProgress || onProgress)(m)) };
+  return p.ocrCache.run;
+}
+async function scanSource(src) {
+  if (src.brokenText !== undefined) return;
+  src.brokenText = false;
+  for (const q of state.pages.filter(x => x.src === src)) {
+    const ls = await pageLines(q);
+    if (ls.length && looksBroken(ls.map(l => l.text).join(" "))) { src.brokenText = true; break; }
+  }
+}
+// as soon as files are added: find pages that need OCR and read them in the background, so the
+// buttons are (nearly) instant when pressed
+let bgRun = 0;
+async function prefetchOcr() {
+  if (!OCR_OK) return;
+  const run = ++bgRun, hint = $("#quick .qh"), idle = () => (hint.textContent = I18N.quickHint[LANG === "en" ? 1 : 0]);
+  try {
+    for (const src of new Set(state.pages.map(p => p.src))) await scanSource(src);
+    const todo = [];
+    for (const p of state.pages) {
+      const ls = await pageLines(p);
+      if (!ls.length || (ls.length && looksBroken(ls.map(l => l.text).join(" "))) || p.src.brokenText || $("#ocrAll").checked) todo.push(p);
+    }
+    for (let i = 0; i < todo.length; i++) {
+      if (run !== bgRun || !state.pages.includes(todo[i])) return;
+      const p = todo[i];
+      p.ocrProgress = m => { if (run === bgRun) hint.textContent = T(`⏳ تجهيز النص في الخلفية — صفحة ${i + 1} من ${todo.length}`, `⏳ Preparing text in the background — page ${i + 1} of ${todo.length}`) + (m.status === "recognizing text" ? ` (${Math.round(m.progress * 100)}%)` : ""); };
+      await ocrCached(p, p.ocrProgress);
+      p.ocrProgress = null;
+    }
+    if (run === bgRun && todo.length) hint.textContent = T("✓ النص جاهز — اضغط الزر وينزل الملف فوراً.", "✓ Text ready — press the button and the file downloads right away.");
+    else if (run === bgRun) idle();
+  } catch (e) { console.error(e); if (run === bgRun) idle(); }
+}
+
 // lines of one page; scanned pages and pages whose stored text is corrupt are read with OCR when possible
 async function readLines(p, useOcr, label) {
   const lines = await pageLines(p);
@@ -943,7 +993,7 @@ async function readLines(p, useOcr, label) {
     toast(T("النص المحفوظ داخل هذا الملف تالف. للحصول على نص سليم افتح الأداة من الرابط العام: malekam91.github.io/pdf-workshop", "The text stored in this file is corrupt. For clean text, open the tool from the public link: malekam91.github.io/pdf-workshop"));
   }
   if (!force && ((lines.length && !broken) || !useOcr || !OCR_OK)) return { lines, ocr: false, broken };
-  const ocr = await ocrLines(p, m => {
+  const ocr = await ocrCached(p, m => {
     if (m.status === "recognizing text") status(`${label} — ${T("قراءة ضوئية", "OCR")} ${Math.round(m.progress * 100)}%`, m.progress * 100);
     else if (m.status === "checking words") status(`${label} — ${T("تدقيق الكلمات…", "Checking words…")}`, 95);
     else if (/load|initializ/.test(m.status)) status(`${label} — ${T("تجهيز القراءة الضوئية…", "Preparing OCR…")}`, 5);
@@ -995,14 +1045,7 @@ function blocksHtml(bs) {
 // every selected page as blocks, with OCR where needed
 async function extractPages(pages, useOcr, onStep) {
   // a file whose font loses letters on one page loses them on every page: check all pages first
-  for (const src of new Set(pages.map(p => p.src))) {
-    if (src.brokenText !== undefined) continue;
-    src.brokenText = false;
-    for (const q of state.pages.filter(x => x.src === src)) {
-      const ls = await pageLines(q);
-      if (ls.length && looksBroken(ls.map(l => l.text).join(" "))) { src.brokenText = true; break; }
-    }
-  }
+  for (const src of new Set(pages.map(p => p.src))) await scanSource(src);
   const out = [];
   for (let i = 0; i < pages.length; i++) {
     onStep && onStep(i);
@@ -1178,6 +1221,7 @@ $("#textModal").addEventListener("click", e => { if (e.target.id === "textModal"
 document.addEventListener("keydown", e => { if (e.key === "Escape") $("#textModal").hidden = true; });
 $("#langBtn").onclick = () => { LANG = LANG === "ar" ? "en" : "ar"; applyLang(); renderAll(); };
 $("#ocrRow").hidden = !OCR_OK;
+$("#ocrAll").addEventListener("change", () => prefetchOcr());
 $("#liteNote").hidden = OCR_OK;
 applyLang();
 document.fonts.ready.then(sample);
