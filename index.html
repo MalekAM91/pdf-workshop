@@ -259,6 +259,7 @@ label{font-size:.85rem;color:var(--muted)}
 <script src="vendor/ocr/tesseract.min.js"></script>
 <script>
 (() => {
+// bundled pdf.js worker with two fixes for Arabic lam-alef ligatures (see vendor/pdf.worker.min.js)
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("vendor/pdf.worker.min.js", location.href).href;
 const { PDFDocument, degrees, rgb, StandardFonts } = PDFLib;
 const $ = (s, r = document) => r.querySelector(s);
@@ -682,13 +683,27 @@ async function buildPdf(pages, onStep) {
 
 /* ---------- text pipeline: PDF text (or OCR) -> clean lines -> headings, paragraphs, tables ---------- */
 // NFKC turns Arabic presentation forms back into normal letters; drop kashida, zero-width and direction marks
-const CLEAN = s => s.normalize("NFKC").replace(/[ـ​-‏‪-‮⁦-⁩﻿]/g, "");
+const CLEAN = s => s.normalize("NFKC").replace(/[ـ​-‏‪-‮⁦-⁩﻿]/g, "")
+  .replace(/[\uF000-\uF0FF]/g, "•"); // Word bullets from the Symbol/Wingdings fonts
 const ONLY_MARKS = /^[ً-ْٰ\s]+$/;
 function fixLine(t, rtl) {
   if (!rtl) return t;
-  // brackets stored as their mirrored glyphs come out reversed: ")12(" -> "(12)"
-  const o = t.indexOf("("), c = t.indexOf(")");
-  if (c > -1 && (o < 0 || c < o)) t = t.replace(/[()[\]]/g, ch => ({ "(": ")", ")": "(", "[": "]", "]": "[" })[ch]);
+  // brackets drawn as mirrored glyphs come out reversed (")12(" or "(أ( و)ب("): decide each one from
+  // its neighbours, and by nesting depth when both neighbours are letters
+  if (/[()[\]]/.test(t)) {
+    const W = /[\p{L}\p{N}%٪]/u, open = { "(": 1, "[": 1 }, pair = { "(": ")", ")": "(", "[": "]", "]": "[" };
+    let depth = 0;
+    t = [...t].map((ch, i, a) => {
+      if (!pair[ch]) return ch;
+      const p = a[i - 1] || " ", n = a[i + 1] || " ", base = open[ch] ? ch : pair[ch];
+      let isOpen;
+      if (!W.test(p) && W.test(n)) isOpen = true;
+      else if (W.test(p) && !W.test(n)) isOpen = false;
+      else isOpen = depth === 0;
+      depth = Math.max(0, depth + (isOpen ? 1 : -1));
+      return isOpen ? base : pair[base];
+    }).join("");
+  }
   return t.replace(/\s+([ً-ْٰ])/g, "$1")
     .replace(/(^|\s)([.,:;،؛!?%٪])([\d٠-٩][\d٠-٩.,/]*)(?=\s|$)/g, "$1$3$2") // ".2024" -> "2024." and "%95" -> "95%"
     .replace(/([\d٠-٩])([.,:;،؛!?])([%٪])(?=\s|$)/g, "$1$3$2"); // "١٠٠.٪" -> "١٠٠٪."
@@ -737,7 +752,9 @@ async function pageLines(p) {
     arr.forEach((it, k) => {
       if (k && !it.kashida && !arr[k - 1].kashida) {
         const pr = arr[k - 1], gap = rtl ? pr.x - (it.x + it.w) : it.x - (pr.x + pr.w);
-        if (gap > ln.h * 2.2) text = text.replace(/\s+$/, "") + "\t"; // wide gap: next table cell
+        // wide gap: next table cell (a lone number, like a row counter, needs less of a gap)
+        const lone = x => /^\s*[\d٠-٩]{1,4}[.)]?\s*$/.test(x.s);
+        if (gap > ln.h * 2.2 || (gap > ln.h * 1.1 && (lone(it) || lone(pr)))) text = text.replace(/\s+$/, "") + "\t";
         else if (gap > ln.h * 0.12 && !/\s$/.test(text) && !/^\s/.test(it.s)) text += " ";
       }
       text += it.s;
