@@ -721,6 +721,7 @@ function visualToLogical(t) {
 }
 // text whose fonts map glyphs to the wrong characters: stray Latin-Extended/private-use letters among
 // Arabic, or words broken into single letters
+const TELLTALE = new Set(["ف", "الت", "والت", "فالت", "الذ", "والذ", "التأمي", "الش"]);
 function looksBroken(text) {
   const ar = (text.match(AR_G) || []).length; if (ar < 20) return false;
   const bad = (text.match(/[ƀ-ɏ-\uFFFD]/g) || []).length;
@@ -728,7 +729,9 @@ function looksBroken(text) {
   // letters that fell out of their words ("ش كة", "التأمي … ي"): fonts that draw some letters as separate
   // shapes and dots. Normal Arabic almost never has a lone letter other than "و".
   const loose = toks.filter(w => (w.match(AR_G) || []).length === 1 && w !== "و" && !/[()[\].]/.test(w)).length;
-  return (bad >= 3 && bad / ar > 0.01) || (loose >= 4 && loose / toks.length >= 0.05);
+  // words that only exist when final letters were lost: "ف" (في), "الت" (التي), "التأمي" (التأمين)
+  const tell = toks.filter(w => TELLTALE.has(w.replace(/[،,.؛:()]/g, ""))).length;
+  return (bad >= 3 && bad / ar > 0.01) || (loose >= 4 && loose / toks.length >= 0.05) || tell >= 2;
 }
 
 async function pageLines(p) {
@@ -927,7 +930,7 @@ async function ocrLines(p, onProgress) {
 // lines of one page; scanned pages and pages whose stored text is corrupt are read with OCR when possible
 async function readLines(p, useOcr, label) {
   const lines = await pageLines(p);
-  const broken = lines.length > 0 && looksBroken(lines.map(l => l.text).join(" "));
+  const broken = (lines.length > 0 && looksBroken(lines.map(l => l.text).join(" "))) || !!p.src.brokenText;
   const force = OCR_OK && $("#ocrAll").checked;
   if (broken && !OCR_OK && !readLines.warned) { // this copy has no OCR engine (the private Claude page)
     readLines.warned = true;
@@ -985,6 +988,15 @@ function blocksHtml(bs) {
 }
 // every selected page as blocks, with OCR where needed
 async function extractPages(pages, useOcr, onStep) {
+  // a file whose font loses letters on one page loses them on every page: check all pages first
+  for (const src of new Set(pages.map(p => p.src))) {
+    if (src.brokenText !== undefined) continue;
+    src.brokenText = false;
+    for (const q of state.pages.filter(x => x.src === src)) {
+      const ls = await pageLines(q);
+      if (ls.length && looksBroken(ls.map(l => l.text).join(" "))) { src.brokenText = true; break; }
+    }
+  }
   const out = [];
   for (let i = 0; i < pages.length; i++) {
     onStep && onStep(i);
