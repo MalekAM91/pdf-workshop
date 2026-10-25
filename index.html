@@ -39,6 +39,9 @@ h1{font-family:var(--f-display);font-size:1.55rem;margin:0;line-height:1.3;text-
 .shield{display:flex;align-items:center;gap:8px;background:var(--accent-soft);color:var(--ink);border-radius:999px;padding:6px 14px;font-size:.85rem;font-weight:500}
 .shield svg{flex:none;color:var(--accent)}
 .headtools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.lite{background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:12px 16px;font-size:.92rem;font-weight:500}
+.lite a{color:var(--ink);font-weight:700}
+.ver{font-family:var(--f-mono);font-size:.72rem;color:var(--muted)}
 button,.btn{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:7px 12px;display:inline-flex;align-items:center;gap:6px;line-height:1.3}
 button:hover{border-color:var(--accent)}
 button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -144,6 +147,7 @@ label{font-size:.85rem;color:var(--muted)}
     </div>
     <button id="langBtn" type="button" lang="en">English</button></div>
   </header>
+  <div class="lite" id="liteNote" hidden><span data-i18n="lite">هذه نسخة مختصرة بدون قراءة ضوئية، فالملفات اللي نصها تالف أو ممسوحة ما تتحول صح. للتحويل الكامل افتح:</span> <a href="https://malekam91.github.io/pdf-workshop/" target="_blank" rel="noopener">malekam91.github.io/pdf-workshop</a></div>
 
   <div class="drop" id="drop">
     <div>
@@ -241,6 +245,7 @@ label{font-size:.85rem;color:var(--muted)}
         <ul class="notes">
           <li data-i18n="priv1">كل المعالجة داخل المتصفح، ولا يوجد خادم يستقبل الملفات.</li>
           <li data-i18n="priv2">لا يُحفظ شيء في المتصفح؛ إغلاق الصفحة أو «مسح كل شيء» يمحو الملفات من الذاكرة.</li>
+          <li class="ver" id="verLine">v2026.10.25-5</li>
           <li data-i18n="priv3">الملفات الممسوحة ضوئياً (صور بدون نص) تتحول لـ Word كصور فقط.</li>
         </ul>
       </section>
@@ -280,6 +285,7 @@ const I18N = {
   shield: ["الملفات لا تغادر جهازك ولا يُحفظ أي شيء", "Files never leave your device. Nothing is stored."],
   dropT: ["اسحب ملفات PDF أو صور هنا", "Drop PDFs or images here"],
   dropP: ["تقدر تضيف أكثر من ملف، وتنضم صفحاتها بالترتيب. الصور تتحول لصفحات PDF.", "Add several files and their pages join in order. Images become PDF pages."],
+  lite: ["هذه نسخة مختصرة بدون قراءة ضوئية، فالملفات اللي نصها تالف أو ممسوحة ما تتحول صح. للتحويل الكامل افتح:", "This light copy has no OCR, so scanned files or files with corrupt text will not convert correctly. For the full tool open:"],
   quick: ["حمّل المستند المقروء (Word)", "Download readable document (Word)"],
   copyBtn: ["نسخ النص", "Copy text"], tmTitle: ["النص المستخرج", "Extracted text"], copy: ["نسخ", "Copy"], close: ["إغلاق", "Close"],
   quickHint: ["بضغطة وحدة: كل الصفحات تتحول لملف Word منسّق، أو انسخ النص والصقه في أي مكان.", "One click: every page becomes a formatted Word file, or copy the text and paste it anywhere."],
@@ -1172,6 +1178,7 @@ $("#textModal").addEventListener("click", e => { if (e.target.id === "textModal"
 document.addEventListener("keydown", e => { if (e.key === "Escape") $("#textModal").hidden = true; });
 $("#langBtn").onclick = () => { LANG = LANG === "ar" ? "en" : "ar"; applyLang(); renderAll(); };
 $("#ocrRow").hidden = !OCR_OK;
+$("#liteNote").hidden = OCR_OK;
 applyLang();
 document.fonts.ready.then(sample);
 renderAll();
