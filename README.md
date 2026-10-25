@@ -14,6 +14,8 @@ Open the link on any device (Windows, Mac, iPhone, Android) and start working. T
 |---|---|
 | PDF → Word (editable, Arabic and English) | PDF ← Word (نص قابل للتعديل، عربي وإنجليزي) |
 | OCR for scanned PDFs (Arabic and English) | قراءة ضوئية OCR للملفات الممسوحة (عربي وإنجليزي) |
+| Copy text with one click: whole paragraphs, tables as tab-separated cells | نسخ النص بضغطة: فقرات كاملة، والجداول خلايا مفصولة |
+| Corrupt text in a PDF is detected and read with OCR instead | النص التالف داخل الملف يُكتشف تلقائياً ويُقرأ ضوئياً |
 | PDF → images (PNG) · PDF → text | PDF ← صور · PDF ← نص |
 | Images → PDF | صور ← PDF |
 | Merge files, reorder, rotate, delete pages | دمج ملفات، ترتيب، تدوير، حذف صفحات |

@@ -56,6 +56,12 @@ label{font-size:.85rem;color:var(--muted)}
 .quick{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;background:var(--surface);border:1px solid var(--accent);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}
 .quick button{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-family:var(--f-display);font-size:1.05rem;font-weight:600;padding:12px 22px;border-radius:10px;gap:10px}
 .quick button:hover{filter:brightness(1.08)}
+.quick button.alt{background:var(--surface);color:var(--ink);border-color:var(--line)}
+.modal{position:fixed;inset:0;z-index:40;background:rgba(10,20,17,.45);display:flex;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.modal .box{background:var(--surface);color:var(--ink);border-radius:14px;box-shadow:var(--shadow);width:min(760px,100%);max-height:100%;display:flex;flex-direction:column;gap:12px;padding:16px}
+.modal .mhead{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.modal h3{margin:0;font-family:var(--f-display);font-size:1.05rem}
+.modal textarea{width:100%;min-height:50vh;resize:vertical;font:15px/1.8 var(--f-body);padding:12px}
 .quick span.qh{color:var(--muted);font-size:.86rem;flex:1;min-width:200px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 6px 4px 12px;font-size:.85rem;max-width:100%}
@@ -153,7 +159,8 @@ label{font-size:.85rem;color:var(--muted)}
   <div class="chips" id="chips"></div>
   <div class="quick" id="quick" hidden>
     <button id="quickWord" type="button"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg><span data-i18n="quick">حمّل المستند المقروء (Word)</span></button>
-    <span class="qh" data-i18n="quickHint">بضغطة وحدة: كل الصفحات تتحول لملف Word تقدر تقرأه وتعدّل عليه.</span>
+    <button id="quickCopy" class="alt" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span data-i18n="copyBtn">نسخ النص</span></button>
+    <span class="qh" data-i18n="quickHint">بضغطة وحدة: كل الصفحات تتحول لملف Word منسّق، أو انسخ النص والصقه في أي مكان.</span>
   </div>
 
   <div class="bench">
@@ -237,6 +244,13 @@ label{font-size:.85rem;color:var(--muted)}
     </aside>
   </div>
 </div>
+<div class="modal" id="textModal" hidden>
+  <div class="box" role="dialog" aria-modal="true" aria-labelledby="tmTitle">
+    <div class="mhead"><h3 id="tmTitle" data-i18n="tmTitle">النص المستخرج</h3><button id="tmClose" type="button" data-i18n-aria="close">✕</button></div>
+    <textarea id="tmText" readonly></textarea>
+    <div class="row"><button id="tmCopy" class="primary" type="button" data-i18n="copy">نسخ</button><span class="status" id="tmMsg"></span></div>
+  </div>
+</div>
 <div class="toast" id="toast" hidden></div>
 
 <script src="vendor/pdf.min.js"></script>
@@ -263,7 +277,8 @@ const I18N = {
   dropT: ["اسحب ملفات PDF أو صور هنا", "Drop PDFs or images here"],
   dropP: ["تقدر تضيف أكثر من ملف، وتنضم صفحاتها بالترتيب. الصور تتحول لصفحات PDF.", "Add several files and their pages join in order. Images become PDF pages."],
   quick: ["حمّل المستند المقروء (Word)", "Download readable document (Word)"],
-  quickHint: ["بضغطة وحدة: كل الصفحات تتحول لملف Word تقدر تقرأه وتعدّل عليه.", "One click: every page becomes a Word file you can read and edit."],
+  copyBtn: ["نسخ النص", "Copy text"], tmTitle: ["النص المستخرج", "Extracted text"], copy: ["نسخ", "Copy"], close: ["إغلاق", "Close"],
+  quickHint: ["بضغطة وحدة: كل الصفحات تتحول لملف Word منسّق، أو انسخ النص والصقه في أي مكان.", "One click: every page becomes a formatted Word file, or copy the text and paste it anywhere."],
   choose: ["اختيار ملفات", "Choose files"], clear: ["مسح كل شيء", "Clear all"],
   tabOrg: ["ترتيب الصفحات", "Pages"], tabEdit: ["تعديل وكتابة", "Edit and write"],
   hintOrg: ["اسحب الصفحة لتغيير مكانها، أو استخدم الأسهم. اضغط مرتين على الصفحة لفتحها في التعديل.", "Drag a page to move it, or use the arrows. Double-click a page to edit it."],
@@ -287,6 +302,7 @@ const DEFAULTS = { outName: ["مستند", "document"], wmText: ["سري — ل�
 function applyLang() {
   const k = LANG === "en" ? 1 : 0, w = $("#wrap");
   w.dir = LANG === "en" ? "ltr" : "rtl"; w.lang = LANG; document.documentElement.lang = LANG;
+  for (const id of ["textModal", "toast"]) { $("#" + id).dir = w.dir; $("#" + id).lang = LANG; }
   $$("[data-i18n]").forEach(e => (e.textContent = I18N[e.dataset.i18n][k]));
   $$("[data-i18n-aria]").forEach(e => e.setAttribute("aria-label", I18N[e.dataset.i18nAria][k]));
   $$("[data-i18n-ph]").forEach(e => (e.placeholder = I18N[e.dataset.i18nPh][k]));
@@ -664,47 +680,33 @@ async function buildPdf(pages, onStep) {
   return out.save();
 }
 
-function fixLine(t,rtl){if(!rtl)return t;const o=t.indexOf("("),c=t.indexOf(")");
- if(c>-1&&(o<0||c<o))t=t.replace(/[()[\]]/g,ch=>({"(":")",")":"(","[":"]","]":"["})[ch]);
- return t.replace(/\s+([ً-ْٰ])/g,"$1").replace(/(^|\s)([.,:;،؛!?])(\d[\d.,%]*)(?=\s|$)/g,"$1$3$2")}
-/* ---------- OCR for scanned pages (only where tesseract.js is bundled) ---------- */
-const OCR_OK = typeof window.Tesseract !== "undefined";
-let ocrWorker = null, ocrProgress = null;
-function getOcr() {
-  if (!ocrWorker) {
-    const abs = u => new URL(u, location.href).href;
-    ocrWorker = Tesseract.createWorker(["ara", "eng"], 1, {
-      workerPath: abs("vendor/ocr/worker.min.js"), corePath: abs("vendor/ocr/"), langPath: abs("vendor/ocr/lang"),
-      gzip: true, workerBlobURL: false, cacheMethod: "none", // nothing is kept in the browser
-      logger: m => ocrProgress && ocrProgress(m),
-    }).catch(e => { ocrWorker = null; throw e; });
-  }
-  return ocrWorker;
+/* ---------- text pipeline: PDF text (or OCR) -> clean lines -> headings, paragraphs, tables ---------- */
+// NFKC turns Arabic presentation forms back into normal letters; drop kashida, zero-width and direction marks
+const CLEAN = s => s.normalize("NFKC").replace(/[ـ​-‏‪-‮⁦-⁩﻿]/g, "");
+const ONLY_MARKS = /^[ً-ْٰ\s]+$/;
+function fixLine(t, rtl) {
+  if (!rtl) return t;
+  // brackets stored as their mirrored glyphs come out reversed: ")12(" -> "(12)"
+  const o = t.indexOf("("), c = t.indexOf(")");
+  if (c > -1 && (o < 0 || c < o)) t = t.replace(/[()[\]]/g, ch => ({ "(": ")", ")": "(", "[": "]", "]": "[" })[ch]);
+  return t.replace(/\s+([ً-ْٰ])/g, "$1")
+    .replace(/(^|\s)([.,:;،؛!?%٪])([\d٠-٩][\d٠-٩.,/]*)(?=\s|$)/g, "$1$3$2") // ".2024" -> "2024." and "%95" -> "95%"
+    .replace(/([\d٠-٩])([.,:;،؛!?])([%٪])(?=\s|$)/g, "$1$3$2"); // "١٠٠.٪" -> "١٠٠٪."
 }
-async function ocrLines(p, onProgress) {
-  ocrProgress = onProgress;
-  const w = await getOcr();
-  const pg = await p.src.doc.getPage(p.idx + 1);
-  const base = pg.getViewport({ scale: 1, rotation: totalRot(p) });
-  const scale = Math.min(3, 2200 / Math.max(base.width, base.height));
-  const vp = pg.getViewport({ scale, rotation: totalRot(p) });
-  const c = document.createElement("canvas"); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
-  const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
-  await pg.render({ canvasContext: ctx, viewport: vp }).promise;
-  const { data } = await w.recognize(c);
-  return (data.lines || []).map(l => {
-    const text = l.text.normalize("NFKC").replace(/[\u200e\u200f\u202a-\u202e]/g, "").replace(/\s+/g, " ").trim();
-    return { text, rtl: isRtl(text), size: Math.max(8, Math.min(36, ((l.bbox.y1 - l.bbox.y0) / scale) * 0.75)), y: l.bbox.y0 / scale };
-  }).filter(l => l.text && /[\p{L}\p{N}]/u.test(l.text));
+// some generators store Arabic in visual order (each word spelled backwards); "ال" at the start of
+// words is so common that seeing it mostly at the end ("لا") gives the line away
+function visualToLogical(t) {
+  const toks = t.split(" "), al = toks.filter(w => /^ال/.test(w)).length, rev = toks.filter(w => w.length > 3 && /لا$/.test(w)).length;
+  if (rev < 3 || rev <= al) return t;
+  return [...t].reverse().join("").replace(/[A-Za-z0-9][A-Za-z0-9.,:%/@\- ]*[A-Za-z0-9%]|[A-Za-z0-9]/g, m => [...m].reverse().join(""));
 }
-// text lines of a page; scanned pages fall back to OCR when it is available and switched on
-async function readLines(p, useOcr, label) {
-  const lines = await pageLines(p);
-  if (lines.length || !useOcr || !OCR_OK) return lines;
-  return ocrLines(p, m => {
-    if (m.status === "recognizing text") status(`${label} — ${T("قراءة ضوئية", "OCR")} ${Math.round(m.progress * 100)}%`, m.progress * 100);
-    else if (/load|initializ/.test(m.status)) status(`${label} — ${T("تجهيز القراءة الضوئية…", "Preparing OCR…")}`, 5);
-  });
+// text whose fonts map glyphs to the wrong characters: stray Latin-Extended/private-use letters among
+// Arabic, or words broken into single letters
+function looksBroken(text) {
+  const ar = (text.match(AR_G) || []).length; if (ar < 20) return false;
+  const bad = (text.match(/[ƀ-ɏ-�]/g) || []).length;
+  const toks = text.split(/\s+/).filter(w => AR.test(w)), single = toks.filter(w => [...w].length === 1).length;
+  return (bad >= 3 && bad / ar > 0.01) || (toks.length >= 10 && single / toks.length > 0.35);
 }
 
 async function pageLines(p) {
@@ -714,9 +716,12 @@ async function pageLines(p) {
   const items = [];
   for (const it of tc.items) {
     if (!it.str || !it.str.trim()) continue;
+    const s = CLEAN(it.str);
+    const kashida = !s.trim() && /\u0640/.test(it.str); // stretched words: keep the slot so the halves rejoin
+    if (!kashida && (!s.trim() || ONLY_MARKS.test(s))) continue; // loose diacritic glyphs land on the wrong letter; drop them
     const t = pdfjsLib.Util.transform(vp.transform, it.transform);
     const h = Math.hypot(t[2], t[3]) || Math.abs(it.height) || 10;
-    items.push({ x: t[4], y: t[5], w: it.width * (Math.hypot(t[0], t[1]) / (Math.hypot(it.transform[0], it.transform[1]) || 1)), h, s: it.str.normalize("NFKC") });
+    items.push({ x: t[4], y: t[5], w: it.width * (Math.hypot(t[0], t[1]) / (Math.hypot(it.transform[0], it.transform[1]) || 1)), h, s: kashida ? "" : s, kashida });
   }
   items.sort((a, b) => a.y - b.y);
   const lines = [];
@@ -726,33 +731,209 @@ async function pageLines(p) {
     else lines.push({ y: it.y, h: it.h, items: [it] });
   }
   return lines.map(ln => {
-    const raw = ln.items.map(i => i.s).join(" "); const rtl = isRtl(raw);
+    const rtl = isRtl(ln.items.map(i => i.s).join(" "));
     const arr = ln.items.sort((a, b) => (rtl ? b.x - a.x : a.x - b.x));
     let text = "";
     arr.forEach((it, k) => {
-      if (k) {
-        const pr = arr[k - 1]; const gap = rtl ? pr.x - (it.x + it.w) : it.x - (pr.x + pr.w);
-        if (gap > ln.h * 0.12 && !/\s$/.test(text) && !/^\s/.test(it.s)) text += " ";
+      if (k && !it.kashida && !arr[k - 1].kashida) {
+        const pr = arr[k - 1], gap = rtl ? pr.x - (it.x + it.w) : it.x - (pr.x + pr.w);
+        if (gap > ln.h * 2.2) text = text.replace(/\s+$/, "") + "\t"; // wide gap: next table cell
+        else if (gap > ln.h * 0.12 && !/\s$/.test(text) && !/^\s/.test(it.s)) text += " ";
       }
       text += it.s;
     });
-    return { text: fixLine(text.replace(/\s+/g, " ").trim(), rtl), rtl, size: ln.h, y: ln.y };
+    text = text.split("\t").map(c => fixLine((rtl ? visualToLogical : String)(c.replace(/\s+/g, " ").trim()), rtl)).filter(Boolean).join("\t");
+    const solid = arr.filter(i => !i.kashida);
+    return { text, rtl, size: ln.h, y: ln.y, x0: Math.min(...solid.map(i => i.x)), x1: Math.max(...solid.map(i => i.x + i.w)) };
+  }).filter(l => l.text);
+}
+
+/* ---------- OCR for scanned pages (only where tesseract.js is bundled) ---------- */
+const OCR_OK = typeof window.Tesseract !== "undefined";
+let ocrWorkers = {}, ocrProgress = null;
+function getOcr(langs) {
+  if (!ocrWorkers[langs]) {
+    const abs = u => new URL(u, location.href).href;
+    ocrWorkers[langs] = Tesseract.createWorker(langs.split("+"), 1, {
+      workerPath: abs("vendor/ocr/worker.min.js"), corePath: abs("vendor/ocr/"), langPath: abs("vendor/ocr/lang"),
+      gzip: true, workerBlobURL: false, cacheMethod: "none", // nothing is kept in the browser
+      logger: m => ocrProgress && ocrProgress(m),
+    }).then(async w => { if (langs !== "ara+eng") await w.setParameters({ tessedit_pageseg_mode: "7" }); return w; })
+      .catch(e => { delete ocrWorkers[langs]; throw e; });
+  }
+  return ocrWorkers[langs];
+}
+async function ocrLines(p, onProgress) {
+  ocrProgress = onProgress;
+  const w = await getOcr("ara+eng");
+  const pg = await p.src.doc.getPage(p.idx + 1);
+  const base = pg.getViewport({ scale: 1, rotation: totalRot(p) });
+  const scale = Math.min(3, 2200 / Math.max(base.width, base.height));
+  const vp = pg.getViewport({ scale, rotation: totalRot(p) });
+  const c = document.createElement("canvas"); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+  const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+  await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+  const { data } = await w.recognize(c);
+  // The mixed model sometimes reads an Arabic word as English ("Lay" for "بما") or "%" as "96".
+  // Re-read each doubtful word with the single-language models and keep the more confident reading.
+  const doubtful = [];
+  for (const line of data.lines) for (const wd of line.words) {
+    wd.t = CLEAN(wd.text).trim();
+    if (AR.test(wd.t) ? wd.confidence < 65 : /[\p{L}\p{N}%]/u.test(wd.t)) {
+      // numbers and Latin words: widen the crop to the neighbouring words, since the box often
+      // covers only part of the number ("0" for "120")
+      if (/^[\d٠-٩.,%()]+$/.test(wd.t)) {
+        const xs = line.words.filter(o => o !== wd), rh = line.bbox.y1 - line.bbox.y0;
+        const left = Math.max(line.bbox.x0 - rh, ...xs.filter(o => o.bbox.x1 <= wd.bbox.x0 + 2).map(o => o.bbox.x1 + 2));
+        const right = Math.min(line.bbox.x1 + rh, ...xs.filter(o => o.bbox.x0 >= wd.bbox.x1 - 2).map(o => o.bbox.x0 - 2));
+        wd.crop = { x0: Math.max(0, left), x1: Math.min(c.width, right), y0: wd.bbox.y0, y1: wd.bbox.y1 };
+      }
+      doubtful.push(wd);
+    }
+  }
+  if (doubtful.length) {
+    onProgress && onProgress({ status: "checking words", progress: 0.95 });
+    const [ara, eng] = await Promise.all([getOcr("ara"), getOcr("eng")]);
+    for (const wd of doubtful.slice(0, 120)) {
+      const cut = b => {
+        const pad = 4, k = document.createElement("canvas");
+        k.width = b.x1 - b.x0 + 2 * pad; k.height = b.y1 - b.y0 + 2 * pad;
+        const cx = k.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, k.width, k.height);
+        cx.drawImage(c, b.x0 - pad, b.y0 - pad, k.width, k.height, 0, 0, k.width, k.height);
+        return k;
+      };
+      const read = async (m, k) => { const r = (await m.recognize(k)).data; return { t: CLEAN(r.text).replace(/\s+/g, " ").trim(), c: r.confidence }; };
+      const crop = cut(wd.bbox), isAr = AR.test(wd.t);
+      let best = isAr ? { t: wd.t, c: wd.confidence } : null;
+      for (const m of isAr ? [ara] : [eng, ara]) {
+        const r = await read(m, crop);
+        if (isAr) r.t = r.t.split(" ").filter(x => AR.test(x)).join(" "); // a tight crop can clip a neighbour's digit
+        if (r.t && (!best || r.c > best.c)) best = r;
+      }
+      // a number whose box was too narrow: read the gap up to the neighbouring words with the English
+      // model, and keep it only if it is a clean, longer number
+      if (wd.crop && best && /^[\d.,%()]+$/.test(best.t)) {
+        await eng.setParameters({ tessedit_pageseg_mode: "8" });
+        const wide = await read(eng, cut(wd.crop));
+        await eng.setParameters({ tessedit_pageseg_mode: "7" });
+        // confidence drops on the wider crop, so require it to contain the first reading ("20" -> "120")
+        if (/^\(?\d[\d.,]*%?\)?$/.test(wide.t) && wide.t.length > best.t.length && wide.t.includes(best.t)) { best = wide; wd.absorbs = wd.crop; }
+      }
+      if (best) wd.t = best.t;
+    }
+  }
+  const NUM = /^[\d٠-٩.,%]+$/;
+  return data.lines.map(l => {
+    // table borders read as "|"; number pieces already re-read as part of a wider number
+    const wide = l.words.filter(w => w.absorbs);
+    const lh = l.bbox.y1 - l.bbox.y0, border = w => /^[1lI|!\[\]]$/.test(w.t) && w.bbox.x1 - w.bbox.x0 < lh * 0.22 && w.bbox.y1 - w.bbox.y0 > lh * 0.85;
+    let words = l.words.filter(w => w.t && !/^[|_\-–—.]+$/.test(w.t) && !border(w) && !(NUM.test(w.t) && wide.some(o => o !== w && (w.bbox.x0 + w.bbox.x1) / 2 >= o.absorbs.x0 && (w.bbox.x0 + w.bbox.x1) / 2 <= o.absorbs.x1)));
+    if (!words.length) return null;
+    const rtl = isRtl(words.map(w => w.t).join(" "));
+    const rh = l.rowAttributes && l.rowAttributes.row_height > 0 ? l.rowAttributes.row_height : l.bbox.y1 - l.bbox.y0;
+    // a number split into touching pieces ("00%" + "1") is one left-to-right number
+    words = words.reduce((acc, w) => {
+      const pr = acc[acc.length - 1];
+      if (pr && NUM.test(pr.t) && NUM.test(w.t) && Math.max(pr.bbox.x0, w.bbox.x0) - Math.min(pr.bbox.x1, w.bbox.x1) < rh * 0.35) {
+        const [a, b] = pr.bbox.x0 < w.bbox.x0 ? [pr, w] : [w, pr];
+        acc[acc.length - 1] = { t: a.t + b.t, bbox: { x0: Math.min(a.bbox.x0, b.bbox.x0), x1: Math.max(a.bbox.x1, b.bbox.x1), y0: a.bbox.y0, y1: a.bbox.y1 } };
+      } else acc.push(w);
+      return acc;
+    }, []);
+    let text = "";
+    words.forEach((w, k) => {
+      if (k) { const pr = words[k - 1], gap = rtl ? pr.bbox.x0 - w.bbox.x1 : w.bbox.x0 - pr.bbox.x1; text += gap > rh * 1.6 ? "\t" : " "; }
+      text += w.t;
+    });
+    if (rtl) text = text.replace(/[\u064C-\u0652\u0670]/g, "") // OCR diacritics are unreliable; keep only tanween fath ("وفقاً")
+      .replace(/([\u0600-\u06FF])\s*,/g, "$1،").replace(/([\u0600-\u06FF])\s*;/g, "$1؛").replace(/([\u0600-\u06FF])\s*\?/g, "$1؟");
+    text = text.split("\t").map(cell => fixLine(cell.trim(), rtl)).filter(Boolean).join("\t");
+    const base = l.baseline && l.baseline.y0 ? l.baseline.y0 : l.bbox.y1;
+    return { text, rtl, size: Math.max(8, Math.min(36, (rh / scale) * 0.72)), y: base / scale, x0: l.bbox.x0 / scale, x1: l.bbox.x1 / scale };
+  }).filter(l => l && /[\p{L}\p{N}]/u.test(l.text));
+}
+
+// lines of one page; scanned pages and pages whose stored text is corrupt are read with OCR when possible
+async function readLines(p, useOcr, label) {
+  const lines = await pageLines(p);
+  const broken = lines.length > 0 && looksBroken(lines.map(l => l.text).join(" "));
+  if ((lines.length && !broken) || !useOcr || !OCR_OK) return { lines, ocr: false, broken };
+  const ocr = await ocrLines(p, m => {
+    if (m.status === "recognizing text") status(`${label} — ${T("قراءة ضوئية", "OCR")} ${Math.round(m.progress * 100)}%`, m.progress * 100);
+    else if (m.status === "checking words") status(`${label} — ${T("تدقيق الكلمات…", "Checking words…")}`, 95);
+    else if (/load|initializ/.test(m.status)) status(`${label} — ${T("تجهيز القراءة الضوئية…", "Preparing OCR…")}`, 5);
   });
+  return { lines: ocr.length ? ocr : lines, ocr: true, broken };
+}
+
+// group lines into headings, paragraphs (wrapped lines joined back) and tables
+function toBlocks(lines) {
+  if (!lines.length) return [];
+  const plain = lines.filter(l => !l.text.includes("\t"));
+  const sizes = (plain.length ? plain : lines).map(l => l.size).sort((a, b) => a - b), body = sizes[sizes.length >> 1];
+  const bodyW = Math.max(1, ...plain.filter(l => Math.abs(l.size - body) <= body * 0.25).map(l => l.x1 - l.x0));
+  const blocks = []; let prev = null;
+  for (const ln of lines) {
+    const cells = ln.text.split("\t"), last = blocks[blocks.length - 1], gap = prev ? ln.y - prev.y : 1e9;
+    const lh = prev ? Math.max(prev.size, ln.size) : ln.size;
+    if (cells.length > 1) {
+      if (last && last.type === "table" && gap < lh * 3) last.rows.push(cells);
+      else blocks.push({ type: "table", rtl: ln.rtl, rows: [cells] });
+    } else if (ln.size >= body * 1.3 && ln.text.length < 140) {
+      if (last && last.type === "h" && last.rtl === ln.rtl && gap < lh * 1.8) last.text += " " + ln.text;
+      else blocks.push({ type: "h", text: ln.text, rtl: ln.rtl });
+    } else {
+      const joins = last && last.type === "p" && last.rtl === ln.rtl && prev && !prev.text.includes("\t")
+        && Math.abs(prev.size - ln.size) <= lh * 0.25 && gap <= lh * 1.9
+        && prev.x1 - prev.x0 >= bodyW * 0.72 && !/[:：]$/.test(prev.text)
+        && !/^\s*([•▪◦·\-–*]|\(?[\d٠-٩]{1,3}\s*[.)\-–]|\(?[أ-ي]\s*[)\-–])/.test(ln.text);
+      if (joins) last.text += /[A-Za-z]-$/.test(last.text) ? ln.text : " " + ln.text; // "high-" + "risk"
+      else blocks.push({ type: "p", text: ln.text, rtl: ln.rtl });
+    }
+    prev = ln;
+  }
+  return blocks.map(b => (b.type === "table" && b.rows.length < 2 ? { type: "p", text: b.rows[0].join("   "), rtl: b.rtl } : b));
+}
+const blocksText = bs => bs.map(b => (b.type === "table" ? b.rows.map(r => r.join("\t")).join("\n") : b.text)).join("\n\n");
+const escH = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function blocksHtml(bs) {
+  const d = b => (b.rtl ? ' dir="rtl" style="text-align:right"' : ' dir="ltr"');
+  return bs.map(b => b.type === "h" ? `<h3${d(b)}>${escH(b.text)}</h3>` : b.type === "p" ? `<p${d(b)}>${escH(b.text)}</p>`
+    : `<table${d(b)} border="1" cellpadding="4" style="border-collapse:collapse">${b.rows.map(r => `<tr>${r.map(c => `<td>${escH(c)}</td>`).join("")}</tr>`).join("")}</table>`).join("");
+}
+// every selected page as blocks, with OCR where needed
+async function extractPages(pages, useOcr, onStep) {
+  const out = [];
+  for (let i = 0; i < pages.length; i++) {
+    onStep && onStep(i);
+    const r = await readLines(pages[i], useOcr, `${T("صفحة", "Page")} ${i + 1}/${pages.length}`);
+    out.push({ blocks: toBlocks(r.lines), ocr: r.ocr, broken: r.broken && !r.ocr });
+  }
+  return out;
 }
 
 const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
-function runs(text, rtl, hs) {
-  const rp = r => `<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${r ? "<w:rtl/>" : ""}<w:sz w:val="${hs}"/><w:szCs w:val="${hs}"/></w:rPr>`;
+function runs(text, rtl, hs, bold) {
+  const rp = r => `<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${bold ? "<w:b/><w:bCs/>" : ""}${r ? "<w:rtl/>" : ""}<w:sz w:val="${hs}"/><w:szCs w:val="${hs}"/><w:lang w:val="en-US" w:bidi="ar-SA"/></w:rPr>`;
   if (!rtl) return `<w:r>${rp(false)}<w:t xml:space="preserve">${esc(text)}</w:t></w:r>`;
   // split Latin chunks out of Arabic lines so Word orders them correctly
   return text.split(/([A-Za-z][A-Za-z0-9.,:;\/\-_@%&+'()]*(?: [A-Za-z][A-Za-z0-9.,:;\/\-_@%&+'()]*)*)/).filter(Boolean)
     .map(seg => `<w:r>${rp(!/[A-Za-z]/.test(seg))}<w:t xml:space="preserve">${esc(seg)}</w:t></w:r>`).join("");
 }
-const para = (inner, rtl, extra = "") => `<w:p><w:pPr>${rtl ? "<w:bidi/>" : ""}<w:spacing w:after="80" w:line="276" w:lineRule="auto"/>${extra}</w:pPr>${inner}</w:p>`;
+const para = (inner, rtl, extra = "", after = 120) => `<w:p><w:pPr>${extra}${rtl ? "<w:bidi/>" : ""}<w:spacing w:before="0" w:after="${after}" w:line="300" w:lineRule="auto"/></w:pPr>${inner}</w:p>`;
+function wordTable(b) {
+  const n = Math.max(...b.rows.map(r => r.length)), cw = Math.floor(9638 / n), line = '<w:top w:val="single" w:sz="4" w:color="999999"/><w:left w:val="single" w:sz="4" w:color="999999"/><w:bottom w:val="single" w:sz="4" w:color="999999"/><w:right w:val="single" w:sz="4" w:color="999999"/><w:insideH w:val="single" w:sz="4" w:color="999999"/><w:insideV w:val="single" w:sz="4" w:color="999999"/>';
+  const rows = b.rows.map((r, k) => `<w:tr>${Array.from({ length: n }, (_, j) => r[j] || "").map(c => { const rt = c ? isRtl(c) || (b.rtl && !/[A-Za-z]/.test(c)) : b.rtl; return `<w:tc><w:tcPr><w:tcW w:w="${cw}" w:type="dxa"/></w:tcPr>${para(runs(c, rt, 22, k === 0), rt, "", 0)}</w:tc>`; }).join("")}</w:tr>`).join("");
+  return `<w:tbl><w:tblPr>${b.rtl ? "<w:bidiVisual/>" : ""}<w:tblW w:w="${cw * n}" w:type="dxa"/><w:tblBorders>${line}</w:tblBorders><w:tblCellMar><w:left w:w="100" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${`<w:gridCol w:w="${cw}"/>`.repeat(n)}</w:tblGrid>${rows}</w:tbl>${para("", b.rtl)}`;
+}
+function blocksDocx(bs) {
+  return bs.map(b => b.type === "h" ? para(runs(b.text, b.rtl, 32, true), b.rtl, '<w:keepNext/>', 160)
+    : b.type === "p" ? para(runs(b.text, b.rtl, 24), b.rtl) : wordTable(b)).join("");
+}
 const pageBreak = `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
 
 async function buildDocx(pages, mode, onStep, useOcr) {
-  const zip = new JSZip(); const body = []; const rels = []; let docRtl = 0, scanned = 0;
+  const zip = new JSZip(); const body = []; const rels = []; let docRtl = 0, scanned = 0, ocrPages = 0;
   let rendered = null;
   if (mode !== "text") { const bytes = await buildPdf(pages); rendered = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise; }
   for (let i = 0; i < pages.length; i++) {
@@ -772,16 +953,11 @@ async function buildDocx(pages, mode, onStep, useOcr) {
       if (mode === "both") body.push(pageBreak);
     }
     if (mode !== "image") {
-      const lines = await readLines(pages[i], useOcr, `${T("صفحة", "Page")} ${i + 1}/${pages.length}`);
-      if (!lines.length) { scanned++; body.push(para(runs(T(`[الصفحة ${i + 1}: لا يوجد نص قابل للاستخراج — غالباً صفحة ممسوحة ضوئياً]`, `[Page ${i + 1}: no text found — probably a scanned page]`), LANG !== "en", 20), LANG !== "en")); continue; }
-      let prev = null;
-      for (const ln of lines) {
-        if (ln.rtl) docRtl++; else docRtl--;
-        if (prev && ln.y - prev.y > Math.max(prev.size, ln.size) * 2.1) body.push(para("", ln.rtl));
-        const hs = Math.max(16, Math.min(72, Math.round(ln.size * 2)));
-        body.push(para(runs(ln.text, ln.rtl, hs), ln.rtl));
-        prev = ln;
-      }
+      const [pgx] = await extractPages([pages[i]], useOcr);
+      if (!pgx.blocks.length) { scanned++; body.push(para(runs(T(`[الصفحة ${i + 1}: لا يوجد نص قابل للاستخراج — غالباً صفحة ممسوحة ضوئياً]`, `[Page ${i + 1}: no text found — probably a scanned page]`), LANG !== "en", 20), LANG !== "en")); continue; }
+      if (pgx.ocr) ocrPages++;
+      for (const b of pgx.blocks) docRtl += b.rtl ? 1 : -1;
+      body.push(blocksDocx(pgx.blocks));
     }
   }
   if (rendered) rendered.destroy();
@@ -790,7 +966,7 @@ async function buildDocx(pages, mode, onStep, useOcr) {
   zip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`);
   zip.file("word/_rels/document.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels.join("")}</Relationships>`);
   zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body.join("")}${sect}</w:body></w:document>`);
-  return { blob: await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }), scanned };
+  return { blob: await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }), scanned, ocrPages };
 }
 
 let busy = false;
@@ -807,12 +983,13 @@ $$("[data-out]").forEach(b => b.onclick = async () => {
       status(T("جاهز", "Done"), 100); await saveFile(name + ".pdf", new Blob([bytes], { type: "application/pdf" }));
     } else if (kind === "docx") {
       const mode = $("input[name=wmode]:checked").value;
-      const { blob, scanned } = await buildDocx(pages, mode, step(T("تحويل إلى Word", "Converting to Word")), $("#ocrOn").checked);
-      status(scanned ? T(`جاهز — ${scanned} صفحة بدون نص (ممسوحة ضوئياً). جرّب «نسخة مطابقة للشكل».`, `Done — ${scanned} page(s) have no text (scanned). Try "Exact look".`) : T("جاهز", "Done"), 100);
+      const { blob, scanned, ocrPages } = await buildDocx(pages, mode, step(T("تحويل إلى Word", "Converting to Word")), $("#ocrOn").checked);
+      status(scanned ? T(`جاهز — ${scanned} صفحة بدون نص (ممسوحة ضوئياً). جرّب «نسخة مطابقة للشكل».`, `Done — ${scanned} page(s) have no text (scanned). Try "Exact look".`)
+        : ocrPages ? T(`جاهز — ${ocrPages} صفحة قُرئت ضوئياً (OCR)؛ راجع الأسماء والأرقام المهمة.`, `Done — ${ocrPages} page(s) read with OCR; check important names and figures.`) : T("جاهز", "Done"), 100);
       await saveFile(name + ".docx", blob);
     } else if (kind === "txt") {
-      const parts = [];
-      for (let i = 0; i < pages.length; i++) { step(T("استخراج النص", "Extracting text"))(i); const ls = await readLines(pages[i], $("#ocrOn").checked, `${T("صفحة", "Page")} ${i + 1}/${pages.length}`); parts.push(`—— ${T("صفحة", "Page")} ${i + 1} ——\n` + (ls.length ? ls.map(l => l.text).join("\n") : T("[لا يوجد نص]", "[no text]"))); }
+      const ex = await extractPages(pages, $("#ocrOn").checked, step(T("استخراج النص", "Extracting text")));
+      const parts = ex.map((x, i) => `—— ${T("صفحة", "Page")} ${i + 1} ——\n\n` + (x.blocks.length ? blocksText(x.blocks) : T("[لا يوجد نص]", "[no text]")));
       status(T("جاهز", "Done"), 100); await saveFile(name + ".txt", "﻿" + parts.join("\n\n"));
     } else if (kind === "png") {
       const bytes = await buildPdf(pages); const doc = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
@@ -867,6 +1044,38 @@ $("#quickWord").onclick = () => {
   $('[data-out="docx"]').click(); // the export handler reads both settings before its first await
   range.value = saved; radio.checked = true; ocr.checked = ocrWas;
 };
+// copy: plain text (tabs between table cells) plus HTML so Word and Outlook keep right-to-left paragraphs
+let copied = { text: "", html: "" };
+async function copyNow(withHtml) {
+  try {
+    if (withHtml && window.ClipboardItem) await navigator.clipboard.write([new ClipboardItem({ "text/plain": new Blob([copied.text], { type: "text/plain" }), "text/html": new Blob([copied.html], { type: "text/html" }) })]);
+    else await navigator.clipboard.writeText(copied.text);
+    return true;
+  } catch { try { await navigator.clipboard.writeText(copied.text); return true; } catch { return false; } }
+}
+$("#quickCopy").onclick = async () => {
+  if (busy || !state.pages.length) return;
+  busy = true; $("#quickCopy").disabled = true;
+  try {
+    const ex = await extractPages(state.pages, $("#ocrOn").checked, i => status(`${T("قراءة النص", "Reading text")} — ${T("صفحة", "page")} ${i + 1} / ${state.pages.length}`, ((i + 1) / state.pages.length) * 100));
+    const all = ex.flatMap(x => x.blocks);
+    copied = { text: blocksText(all), html: `<div>${blocksHtml(all)}</div>` };
+    const ta = $("#tmText"), ar = (copied.text.match(AR_G) || []).length, la = (copied.text.match(LAT_G) || []).length;
+    ta.value = copied.text || T("[لا يوجد نص]", "[no text]"); ta.dir = ar >= la ? "rtl" : "ltr";
+    $("#textModal").hidden = false; status(T("جاهز", "Done"), 100);
+    const ok = await copyNow(true);
+    $("#tmMsg").textContent = ok ? T("تم نسخ النص — الصقه في أي مكان.", "Text copied — paste it anywhere.") : T("اضغط «نسخ».", "Press Copy.");
+  } catch (e) { console.error(e); status(T("حدث خطأ: ", "Error: ") + (e.message || e)); }
+  finally { busy = false; $("#quickCopy").disabled = false; }
+};
+$("#tmCopy").onclick = async () => {
+  const ok = await copyNow(true);
+  if (!ok) { const ta = $("#tmText"); ta.focus(); ta.select(); }
+  $("#tmMsg").textContent = ok ? T("تم النسخ.", "Copied.") : T("النص محدد — اضغط Ctrl+C أو انسخ من القائمة.", "Text selected — press Ctrl+C or use Copy from the menu.");
+};
+$("#tmClose").onclick = () => { $("#textModal").hidden = true; };
+$("#textModal").addEventListener("click", e => { if (e.target.id === "textModal") $("#textModal").hidden = true; });
+document.addEventListener("keydown", e => { if (e.key === "Escape") $("#textModal").hidden = true; });
 $("#langBtn").onclick = () => { LANG = LANG === "ar" ? "en" : "ar"; applyLang(); renderAll(); };
 $("#ocrRow").hidden = !OCR_OK;
 applyLang();
