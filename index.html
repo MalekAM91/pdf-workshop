@@ -704,7 +704,7 @@ function visualToLogical(t) {
 // Arabic, or words broken into single letters
 function looksBroken(text) {
   const ar = (text.match(AR_G) || []).length; if (ar < 20) return false;
-  const bad = (text.match(/[ƀ-ɏ-�]/g) || []).length;
+  const bad = (text.match(/[ƀ-ɏ-\uFFFD]/g) || []).length;
   const toks = text.split(/\s+/).filter(w => AR.test(w)), single = toks.filter(w => [...w].length === 1).length;
   return (bad >= 3 && bad / ar > 0.01) || (toks.length >= 10 && single / toks.length > 0.35);
 }
